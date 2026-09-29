@@ -1,0 +1,157 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --font-sans: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+
+    /* JuriMbrella Official Global Design Tokens */
+    --jm-deep-blue: #002D5B;
+    --jm-ocean-blue: #0078CE;
+    --jm-emerald: #2EAF4A;
+    --jm-fresh-green: #A8E063;
+    --jm-white: #FFFFFF;
+    --jm-light-gray: #F4F7F9;
+    --jm-border: #D9E1E8;
+    --jm-charcoal: #17212B;
+    --jm-warning: #E8B949;
+    --jm-error: #D64545;
+    --jm-info: #0078CE;
+    --jm-success: #2EAF4A;
+
+    /* Official Gradients */
+    --jm-gradient-primary: linear-gradient(135deg, #002D5B 0%, #0078CE 45%, #2EAF4A 100%);
+    --jm-gradient-green: linear-gradient(135deg, #2EAF4A 0%, #A8E063 100%);
+    --jm-gradient-blue: linear-gradient(135deg, #002D5B 0%, #0078CE 100%);
+
+    /* Institutional & Theme Variables */
+    --brand-navy: #002D5B;
+    --brand-navy-light: #003F7D;
+    --brand-gold: #E8B949;
+    --brand-charcoal: #17212B;
+  }
+
+  html.dark {
+    color-scheme: dark;
+    --jm-deep-blue: #001F3F;
+    --jm-ocean-blue: #0078CE;
+    --jm-emerald: #2EAF4A;
+    --jm-fresh-green: #A8E063;
+    --jm-white: #002D5B;
+    --jm-light-gray: #0F172A;
+    --jm-border: #1E293B;
+    --jm-charcoal: #F8FAFC;
+    --brand-navy: #001F3F;
+    --brand-gold: #F4D068;
+    --brand-charcoal: #F8FAFC;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--jm-light-gray);
+    color: var(--jm-charcoal);
+    letter-spacing: -0.01em;
+  }
+
+  code, pre, .font-mono {
+    font-family: var(--font-mono);
+  }
+}
+
+/* JuriMbrella Official Brand Utility Classes */
+.bg-jm-deep-blue {
+  background-color: #002D5B;
+}
+.text-jm-deep-blue {
+  color: #002D5B;
+}
+.border-jm-deep-blue {
+  border-color: #002D5B;
+}
+
+.bg-jm-ocean-blue {
+  background-color: #0078CE;
+}
+.text-jm-ocean-blue {
+  color: #0078CE;
+}
+.border-jm-ocean-blue {
+  border-color: #0078CE;
+}
+
+.bg-jm-emerald {
+  background-color: #2EAF4A;
+}
+.text-jm-emerald {
+  color: #2EAF4A;
+}
+.border-jm-emerald {
+  border-color: #2EAF4A;
+}
+
+.bg-jm-fresh-green {
+  background-color: #A8E063;
+}
+.text-jm-fresh-green {
+  color: #A8E063;
+}
+
+.bg-jm-light-gray {
+  background-color: #F4F7F9;
+}
+.border-jm-border {
+  border-color: #D9E1E8;
+}
+.text-jm-charcoal {
+  color: #17212B;
+}
+
+/* Brand Gradients */
+.bg-gradient-jm-primary {
+  background: linear-gradient(135deg, #002D5B 0%, #0078CE 45%, #2EAF4A 100%);
+}
+.bg-gradient-jm-green {
+  background: linear-gradient(135deg, #2EAF4A 0%, #A8E063 100%);
+}
+.bg-gradient-jm-blue {
+  background: linear-gradient(135deg, #002D5B 0%, #0078CE 100%);
+}
+
+/* Backwards compatibility utility classes */
+.text-brand-navy {
+  color: #002D5B;
+}
+.bg-brand-navy {
+  background-color: #002D5B;
+}
+.text-brand-gold {
+  color: #2EAF4A;
+}
+.bg-brand-gold {
+  background-color: #2EAF4A;
+}
+.border-brand-gold {
+  border-color: #2EAF4A;
+}
+
+/* Custom crisp scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 45, 91, 0.2);
+  border-radius: 9999px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 45, 91, 0.4);
+}
