@@ -44,13 +44,13 @@ const STORAGE_KEYS = {
   NOTIFICATIONS: 'jurimbrella_enf_notifications_v1',
 };
 
-// Initial Configurable Plans (as required by section 4 & exact development tier details)
-const DEFAULT_PLANS: ENFPlan[] = [
+// Centralized Authoritative Commercial Plans Configuration (Sections 3, 4, 5 & 33)
+export const ENF_PLANS: ENFPlan[] = [
   {
-    id: 'enf-plan-20k',
+    id: 'enf-20k',
     name: 'ENF ₱20K',
     tier: 'STARTER',
-    tierLabel: '₱20K',
+    tierLabel: 'Solo Practitioner',
     pricePhp: 20000,
     creditAmountPhp: 20000,
     discountRate: 0.19, // 19% applicable technical-fee discount
@@ -73,10 +73,10 @@ const DEFAULT_PLANS: ENFPlan[] = [
     termsVersion: 'v2026.1-SC-AM241014',
   },
   {
-    id: 'enf-plan-50k',
+    id: 'enf-50k',
     name: 'ENF ₱50K',
     tier: 'GROWTH',
-    tierLabel: '₱50K',
+    tierLabel: 'Active Practice',
     pricePhp: 50000,
     creditAmountPhp: 50000,
     discountRate: 0.45, // 45% applicable technical-fee discount
@@ -100,10 +100,10 @@ const DEFAULT_PLANS: ENFPlan[] = [
     termsVersion: 'v2026.1-SC-AM241014',
   },
   {
-    id: 'enf-plan-100k',
+    id: 'enf-100k',
     name: 'ENF ₱100K',
     tier: 'ENTERPRISE',
-    tierLabel: '₱100K',
+    tierLabel: 'Enterprise Firm',
     pricePhp: 100000,
     creditAmountPhp: 100000,
     discountRate: 0.79, // 79% applicable technical-fee discount
@@ -127,6 +127,9 @@ const DEFAULT_PLANS: ENFPlan[] = [
     termsVersion: 'v2026.1-SC-AM241014',
   },
 ];
+
+// Initial Configurable Plans (as required by section 4 & exact development tier details)
+const DEFAULT_PLANS: ENFPlan[] = ENF_PLANS;
 
 // Initial Configurable Bank Settings (Section 20)
 const DEFAULT_BANK_CONFIG: ENFBankConfig = {
@@ -196,6 +199,36 @@ export class EnfStorageService {
 
   public static getPlans(): ENFPlan[] {
     return this.read<ENFPlan[]>(STORAGE_KEYS.PLANS, DEFAULT_PLANS);
+  }
+
+  public static getPlanById(planId: string): ENFPlan | undefined {
+    const plans = this.getPlans();
+    if (!planId) return plans[1];
+    const norm = planId.toLowerCase().trim();
+    return plans.find(
+      (p) =>
+        p.id.toLowerCase() === norm ||
+        p.id.toLowerCase() === `enf-${norm.replace('enf-plan-', '')}` ||
+        p.id.toLowerCase() === `enf-plan-${norm.replace('enf-', '')}` ||
+        (norm.includes('20') && p.pricePhp === 20000) ||
+        (norm.includes('50') && p.pricePhp === 50000) ||
+        (norm.includes('100') && p.pricePhp === 100000) ||
+        p.name.toLowerCase().includes(norm)
+    ) || plans[1];
+  }
+
+  public static getSelectedPlanId(): string {
+    try {
+      const stored = localStorage.getItem('jurimbrella_selected_plan_id');
+      if (stored) return stored;
+    } catch {}
+    return 'enf-50k';
+  }
+
+  public static setSelectedPlanId(planId: string): void {
+    try {
+      localStorage.setItem('jurimbrella_selected_plan_id', planId);
+    } catch {}
   }
 
   public static updatePlan(updated: ENFPlan, actorEmail = 'admin@jurimbrella.ph'): ENFPlan {
@@ -331,8 +364,22 @@ export class EnfStorageService {
     planId: string,
     customer: { id: string; name: string; email: string; phone?: string }
   ): ENFOrder {
-    const plans = this.getPlans();
-    const selectedPlan = plans.find((p) => p.id === planId) || plans[1];
+    const selectedPlan = this.getPlanById(planId) || this.getPlans()[1];
+
+    const orders = this.getOrders();
+
+    // Idempotency: Protect against double clicks, duplicate submissions within 15 seconds
+    const recentDuplicate = orders.find(
+      (o) =>
+        o.customerId === customer.id &&
+        (o.planId === selectedPlan.id || o.amountPhp === selectedPlan.pricePhp) &&
+        o.status === 'PENDING_PAYMENT' &&
+        Date.now() - new Date(o.createdAt).getTime() < 15000
+    );
+
+    if (recentDuplicate) {
+      return recentDuplicate;
+    }
 
     const randomSerial = Math.floor(100000 + Math.random() * 900000);
     const orderId = `ENF-ORD-2026-${randomSerial}`;
@@ -360,7 +407,6 @@ export class EnfStorageService {
       updatedAt: new Date().toISOString(),
     };
 
-    const orders = this.getOrders();
     orders.unshift(newOrder);
     this.write(STORAGE_KEYS.ORDERS, orders);
 

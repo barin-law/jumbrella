@@ -7,6 +7,33 @@
 import { AuditEvent } from '../types';
 
 /**
+ * Derives a cryptographically secure key/hash using PBKDF2 with HMAC-SHA-256 (100,000 iterations).
+ * Standard Key Derivation Function (KDF) supported natively by the Web Crypto API.
+ */
+export async function deriveKeyPbkdf2(password: string, salt: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const passwordKey = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  );
+  const derivedBits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: encoder.encode(`jm_salt_envelope_${salt}`),
+      iterations: 100000,
+      hash: 'SHA-256',
+    },
+    passwordKey,
+    256
+  );
+  const hashArray = Array.from(new Uint8Array(derivedBits));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
  * Computes a standard SHA-256 hexadecimal hash using Web Crypto API.
  */
 export async function sha256(input: string): Promise<string> {
