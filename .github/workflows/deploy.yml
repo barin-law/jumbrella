@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-
   workflow_dispatch:
 
 permissions:
@@ -37,6 +36,18 @@ jobs:
       - name: Build application
         run: npm run build
 
+      - name: Prepare GitHub Pages SPA
+        run: |
+          echo "Creating SPA fallback..."
+          cp dist/index.html dist/404.html
+
+          echo "Creating .nojekyll..."
+          touch dist/.nojekyll
+
+          echo ""
+          echo "Production files:"
+          find dist -maxdepth 2 -type f | sort
+
       - name: Verify production build
         run: |
           echo "Checking dist directory..."
@@ -52,26 +63,26 @@ jobs:
           test -f dist/.nojekyll
 
           echo ""
-          echo "Production files:"
-          ls -lah dist
-
-          echo ""
-          echo "Generated asset references:"
+          echo "Checking generated asset references..."
           grep -oE '(src|href)="[^"]+"' dist/index.html || true
 
           echo ""
-          echo "Checking for incorrect /barinlaw/ references..."
+          echo "Checking for old /barinlaw/ references..."
 
           if grep -RIn "/barinlaw/" dist --exclude="*.map"; then
-            echo "ERROR: Found old /barinlaw/ references."
+            echo "ERROR: Old /barinlaw/ references found."
             exit 1
           fi
 
-          echo "No old /barinlaw/ references found."
+          echo "SUCCESS: No /barinlaw/ references found."
 
           echo ""
-          echo "Checking for /jumbrella/ references..."
+          echo "Checking JuriMbrella /jumbrella/ paths..."
           grep -oE '/jumbrella/[^"]+' dist/index.html || true
+
+          echo ""
+          echo "Final dist contents:"
+          ls -lah dist
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
