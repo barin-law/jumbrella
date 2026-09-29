@@ -128,13 +128,16 @@ export const EnfDashboardView: React.FC<EnfDashboardViewProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-extrabold text-[#002D5B] font-sans">
-                  {enfConfig.facilityName || 'My Electronic Notarial Facility'}
-                </h1>
+                <span className="text-xs font-bold uppercase tracking-wider text-[#0078CE] font-mono">
+                  WELCOME TO JURIMBRELLA ENF
+                </span>
                 <span className="rounded bg-[#2EAF4A]/20 px-2 py-0.5 text-[10px] font-bold text-[#1B6C2E] uppercase">
-                  {wallet.status === 'ACTIVE' ? 'Active Facility' : 'Setup Stage'}
+                  {isPaid ? 'Active Facility' : isUnderReview ? 'Under Verification' : 'Pending Order'}
                 </span>
               </div>
+              <h1 className="text-xl font-extrabold text-[#002D5B] font-sans">
+                {enfConfig.facilityName || 'My Electronic Notarial Facility'}
+              </h1>
               <p className="text-xs text-slate-500">
                 A.M. No. 24-10-14-SC Aligned • Subscriber: {profile.fullName} ({profile.rollNumber ? `Roll #${profile.rollNumber}` : 'Pending Roll'})
               </p>
@@ -143,20 +146,102 @@ export const EnfDashboardView: React.FC<EnfDashboardViewProps> = ({
 
           <div className="flex items-center gap-2 text-xs">
             <button
-              onClick={() => onNavigate('/enf/builder')}
-              className="rounded-lg bg-[#002D5B] px-3.5 py-2 text-white hover:bg-[#0078CE] transition-all font-semibold shadow-xs cursor-pointer flex items-center gap-1.5"
+              onClick={() => onNavigate('/enf/customize')}
+              className="rounded-lg bg-[#2EAF4A] px-4 py-2 text-white hover:bg-[#258F3C] transition-all font-bold shadow-xs cursor-pointer flex items-center gap-1.5"
             >
               <Compass className="h-3.5 w-3.5" />
-              <span>Customize Facility</span>
+              <span>CUSTOMIZE MY ENF</span>
             </button>
             <button
-              onClick={() => onNavigate('/enf/admin')}
+              onClick={() => onNavigate('/enf/development')}
+              className="rounded-lg bg-[#002D5B] px-3.5 py-2 text-white hover:bg-[#0078CE] transition-all font-semibold shadow-xs cursor-pointer flex items-center gap-1.5"
+            >
+              <Layers className="h-3.5 w-3.5" />
+              <span>Milestones</span>
+            </button>
+            <button
+              onClick={() => onNavigate('/admin/payments')}
               className="rounded-lg border border-[#D9E1E8] bg-white px-3 py-2 text-slate-700 hover:text-[#002D5B] hover:border-[#0078CE] transition-all font-semibold shadow-2xs cursor-pointer flex items-center gap-1.5"
               title="Open Admin Payment Verification & Control Desk"
             >
               <Shield className="h-3.5 w-3.5 text-[#0078CE]" />
               <span>Admin Desk</span>
             </button>
+          </div>
+        </div>
+
+        {/* SECTION 16: EXECUTIVE COMMERCIAL DASHBOARD OVERVIEW */}
+        <div className="rounded-2xl border border-[#002D5B] bg-[#002D5B] text-white p-6 shadow-md space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#A8E063] font-mono">
+                SECTION 16 • COMMERCIAL ENF STATUS
+              </span>
+              <h2 className="text-xl font-extrabold font-sans">
+                WELCOME TO JURIMBRELLA ENF
+              </h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-300">Next Step:</span>
+              <button
+                onClick={() => onNavigate('/enf/customize')}
+                className="rounded-lg bg-[#2EAF4A] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#258F3C] transition-all shadow-xs cursor-pointer flex items-center gap-1"
+              >
+                <span>CUSTOMIZE MY ENF</span>
+                <ArrowRight className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 text-xs">
+            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+              <span className="text-slate-300 block text-[10px] uppercase font-bold text-[#A8E063]">Development Plan</span>
+              <span className="font-extrabold text-white text-sm block truncate mt-0.5">
+                {latestOrder?.planName || 'ENF ₱50K'}
+              </span>
+            </div>
+
+            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+              <span className="text-slate-300 block text-[10px] uppercase font-bold text-[#A8E063]">Payment Status</span>
+              <span className={`font-extrabold text-xs block truncate mt-0.5 ${isPaid ? 'text-[#A8E063]' : 'text-amber-300'}`}>
+                {isPaid ? 'CONFIRMED' : isUnderReview ? 'UNDER REVIEW' : 'PENDING'}
+              </span>
+            </div>
+
+            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+              <span className="text-slate-300 block text-[10px] uppercase font-bold text-[#A8E063]">Credits</span>
+              <span className="font-black text-[#A8E063] font-mono text-base block mt-0.5">
+                {wallet.availableCredits}
+              </span>
+            </div>
+
+            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+              <span className="text-slate-300 block text-[10px] uppercase font-bold text-[#A8E063]">Technical Fee</span>
+              <span className="font-extrabold text-white font-mono text-sm block mt-0.5">
+                ₱{wallet.effectiveTechnicalFeePhp || 55}
+              </span>
+            </div>
+
+            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+              <span className="text-slate-300 block text-[10px] uppercase font-bold text-[#A8E063]">Discount</span>
+              <span className="font-extrabold text-[#A8E063] font-mono text-sm block mt-0.5">
+                {(wallet.currentDiscountRate * 100).toFixed(0)}%
+              </span>
+            </div>
+
+            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+              <span className="text-slate-300 block text-[10px] uppercase font-bold text-[#A8E063]">Development</span>
+              <span className="font-extrabold text-white text-xs block truncate mt-0.5">
+                IN PROGRESS
+              </span>
+            </div>
+
+            <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+              <span className="text-slate-300 block text-[10px] uppercase font-bold text-[#A8E063]">ENF Status</span>
+              <span className="font-extrabold text-[#A8E063] text-xs block truncate mt-0.5">
+                {wallet.status === 'ACTIVE' ? 'ACTIVE' : 'SETUP STAGE'}
+              </span>
+            </div>
           </div>
         </div>
 

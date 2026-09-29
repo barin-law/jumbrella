@@ -616,11 +616,13 @@ const AppRouter: React.FC = () => {
 
   /**
    * 5. ENF Development & Prepaid Access Portal
-   * Operations on /enf and all /enf/* subviews
+   * Operations on /enf, /enf/* subviews, and commercial /admin routes
    */
   if (
     currentPath === '/enf' ||
-    currentPath.startsWith('/enf/')
+    currentPath.startsWith('/enf/') ||
+    currentPath === '/admin' ||
+    (currentPath.startsWith('/admin/') && currentPath !== '/admin/system')
   ) {
     return (
       <EnfPortalRoot

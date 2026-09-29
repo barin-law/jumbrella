@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Shield,
   CheckCircle2,
@@ -22,6 +22,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { EnfStorageService } from '../../services/enf/enfStorageService';
+import { EnfAuthService } from '../../services/enf/enfAuthService';
 import {
   ENFPaymentSubmission,
   ENFOrder,
@@ -33,13 +34,26 @@ import {
 } from '../../types/enf';
 
 interface EnfAdminPortalViewProps {
+  initialTab?: 'PAYMENTS' | 'ORDERS' | 'PLANS' | 'BANK_SETTINGS' | 'WALLETS' | 'AUDIT_LOGS' | 'REPORTS';
   onNavigate: (path: string) => void;
 }
 
-export const EnfAdminPortalView: React.FC<EnfAdminPortalViewProps> = ({ onNavigate }) => {
+export const EnfAdminPortalView: React.FC<EnfAdminPortalViewProps> = ({
+  initialTab = 'PAYMENTS',
+  onNavigate,
+}) => {
+  const [currentUser, setCurrentUser] = useState(() => EnfAuthService.getCurrentUser());
+  const isAuthorized = currentUser && ['SUPER_ADMIN', 'ADMIN', 'FINANCE'].includes(currentUser.role);
+
   const [activeTab, setActiveTab] = useState<
     'PAYMENTS' | 'ORDERS' | 'PLANS' | 'BANK_SETTINGS' | 'WALLETS' | 'AUDIT_LOGS' | 'REPORTS'
-  >('PAYMENTS');
+  >(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   // Live state from storage service
   const [payments, setPayments] = useState<ENFPaymentSubmission[]>(() =>
@@ -94,10 +108,16 @@ export const EnfAdminPortalView: React.FC<EnfAdminPortalViewProps> = ({ onNaviga
   const handleExecuteVerification = () => {
     if (!actionModal.payment || !actionModal.type) return;
 
+    if (!isAuthorized) {
+      setFeedback('Security Access Denied: Only SUPER_ADMIN, ADMIN, or FINANCE roles can verify payments.');
+      setTimeout(() => setFeedback(null), 4000);
+      return;
+    }
+
     const res = EnfStorageService.verifyPayment(actionModal.payment.id, actionModal.type, {
       reason: actionReason,
       adminNotes,
-      actorEmail: 'superadmin@jurimbrella.ph',
+      actorEmail: currentUser?.email || 'finance@jurimbrella.ph',
     });
 
     setFeedback(res.message);
@@ -168,6 +188,58 @@ export const EnfAdminPortalView: React.FC<EnfAdminPortalViewProps> = ({ onNaviga
             <span className="rounded-md bg-[#002D5B] px-2.5 py-1 text-xs font-bold text-white font-mono">
               FINANCE PRIVILEGED
             </span>
+          </div>
+        </div>
+
+        {/* Session Authorization Banner */}
+        <div className={`rounded-xl border p-3.5 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs ${
+          isAuthorized
+            ? 'border-[#2EAF4A]/40 bg-[#2EAF4A]/5 text-[#1B6C2E]'
+            : 'border-amber-300 bg-amber-50 text-amber-900'
+        }`}>
+          <div className="flex items-center gap-2.5">
+            <Shield className={`h-4 w-4 ${isAuthorized ? 'text-[#2EAF4A]' : 'text-amber-600'}`} />
+            <div>
+              <span className="font-bold">Active User: </span>
+              <span>{currentUser?.fullName || 'Not Signed In'} </span>
+              <span className="font-mono font-bold px-1.5 py-0.5 rounded bg-black/5 uppercase text-[10px]">
+                {currentUser?.role || 'GUEST'}
+              </span>
+              {!isAuthorized && (
+                <span className="block text-[11px] text-amber-700 mt-0.5">
+                  Notice: Only SUPER_ADMIN, ADMIN, or FINANCE can verify payments. Switch to an administrative role below for testing:
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                const s = EnfAuthService.switchActiveUser('finance-1');
+                if (s) {
+                  setCurrentUser(EnfAuthService.getCurrentUser());
+                  setFeedback('Switched active session to Rowena Garcia (FINANCE).');
+                  setTimeout(() => setFeedback(null), 3000);
+                }
+              }}
+              className="rounded-md border border-[#D9E1E8] bg-white px-2.5 py-1 text-[11px] font-bold text-[#002D5B] hover:bg-slate-50 cursor-pointer"
+            >
+              Switch to Finance Officer
+            </button>
+            <button
+              onClick={() => {
+                const s = EnfAuthService.switchActiveUser('superadmin-1');
+                if (s) {
+                  setCurrentUser(EnfAuthService.getCurrentUser());
+                  setFeedback('Switched active session to Executive Director (SUPER_ADMIN).');
+                  setTimeout(() => setFeedback(null), 3000);
+                }
+              }}
+              className="rounded-md border border-[#D9E1E8] bg-white px-2.5 py-1 text-[11px] font-bold text-[#0078CE] hover:bg-slate-50 cursor-pointer"
+            >
+              Switch to Super Admin
+            </button>
           </div>
         </div>
 

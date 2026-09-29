@@ -16,10 +16,15 @@ import {
   ChevronDown,
   User,
   ShoppingBag,
+  History,
+  Lock,
+  LogIn,
 } from 'lucide-react';
 import { EnfPublicLandingPage } from './EnfPublicLandingPage';
 import { EnfPlansAndCheckoutView } from './EnfPlansAndCheckoutView';
 import { EnfDashboardView } from './EnfDashboardView';
+import { EnfDevelopmentView } from './EnfDevelopmentView';
+import { EnfTransactionsView } from './EnfTransactionsView';
 import { EnfBuilderView } from './EnfBuilderView';
 import { EnfCreditWalletView } from './EnfCreditWalletView';
 import { EnfClientsView } from './EnfClientsView';
@@ -28,7 +33,9 @@ import { EnfAiResearchView } from './EnfAiResearchView';
 import { EnfSupportView } from './EnfSupportView';
 import { EnfCustomerProfileWizard } from './EnfCustomerProfileWizard';
 import { EnfAdminPortalView } from './EnfAdminPortalView';
+import { EnfAuthView } from './EnfAuthView';
 import { EnfStorageService } from '../../services/enf/enfStorageService';
+import { EnfAuthService, ENFAuthUser } from '../../services/enf/enfAuthService';
 
 interface EnfPortalRootProps {
   currentPath: string;
@@ -36,27 +43,99 @@ interface EnfPortalRootProps {
 }
 
 export const EnfPortalRoot: React.FC<EnfPortalRootProps> = ({ currentPath, onNavigate }) => {
-  const [notifications] = useState(() => EnfStorageService.getNotifications('demo-enf-owner-1'));
+  const [currentUser, setCurrentUser] = useState<ENFAuthUser | null>(() => EnfAuthService.getCurrentUser());
+  const actualUserId = currentUser?.id || 'demo-enf-owner-1';
+
+  const [notifications, setNotifications] = useState(() => EnfStorageService.getNotifications(actualUserId));
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState<string>('enf-plan-50k');
+
+  useEffect(() => {
+    const user = EnfAuthService.getCurrentUser();
+    setCurrentUser(user);
+    setNotifications(EnfStorageService.getNotifications(user?.id || 'demo-enf-owner-1'));
+  }, [currentPath]);
 
   // Determine subview from pathname
   const normalized = currentPath.toLowerCase().replace(/\/$/, '');
 
-  // Render Public Landing Page for `/enf`
+  // 1. Render Public Landing Page for `/enf`
   if (normalized === '/enf') {
     return (
       <EnfPublicLandingPage
         onNavigate={onNavigate}
         onSelectPlan={(planId) => {
           setSelectedPlanId(planId);
-          onNavigate('/enf/order');
+          onNavigate(`/enf/checkout?planId=${planId}`);
         }}
+        onOpenAuth={() => onNavigate('/enf/login')}
       />
     );
   }
 
-  // Render Subviews with ENF Authenticated Workspace Bar
+  // 2. Authentication Sub-routes (Section 7)
+  if (normalized === '/enf/login') {
+    return (
+      <EnfAuthView
+        initialMode="LOGIN"
+        returnUrl="/enf/dashboard"
+        onNavigate={onNavigate}
+        onAuthSuccess={() => setCurrentUser(EnfAuthService.getCurrentUser())}
+      />
+    );
+  }
+
+  if (normalized === '/enf/signup' || normalized === '/enf/register') {
+    return (
+      <EnfAuthView
+        initialMode="SIGNUP"
+        returnUrl="/enf/profile"
+        onNavigate={onNavigate}
+        onAuthSuccess={() => setCurrentUser(EnfAuthService.getCurrentUser())}
+      />
+    );
+  }
+
+  if (normalized === '/enf/forgot-password') {
+    return (
+      <EnfAuthView
+        initialMode="FORGOT_PASSWORD"
+        returnUrl="/enf/login"
+        onNavigate={onNavigate}
+      />
+    );
+  }
+
+  if (normalized === '/enf/verify-email') {
+    return (
+      <EnfAuthView
+        initialMode="VERIFY_EMAIL"
+        returnUrl="/enf/dashboard"
+        onNavigate={onNavigate}
+        onAuthSuccess={() => setCurrentUser(EnfAuthService.getCurrentUser())}
+      />
+    );
+  }
+
+  // Determine active admin tab if path is `/admin/*`
+  const getAdminTab = (): 'PAYMENTS' | 'ORDERS' | 'PLANS' | 'BANK_SETTINGS' | 'WALLETS' | 'AUDIT_LOGS' | 'REPORTS' => {
+    if (normalized.includes('payment')) return 'PAYMENTS';
+    if (normalized.includes('order') || normalized.includes('subscription')) return 'ORDERS';
+    if (normalized.includes('bank')) return 'BANK_SETTINGS';
+    if (normalized.includes('credit') || normalized.includes('ledger')) return 'WALLETS';
+    if (normalized.includes('audit')) return 'AUDIT_LOGS';
+    if (normalized.includes('report')) return 'REPORTS';
+    if (normalized.includes('plan')) return 'PLANS';
+    return 'PAYMENTS';
+  };
+
+  const handleLogout = () => {
+    EnfAuthService.logout();
+    setCurrentUser(null);
+    onNavigate('/enf');
+  };
+
+  // Render Subviews with ENF Workspace Bar
   return (
     <div className="min-h-screen bg-[#F4F7F9] text-[#17212B] font-sans antialiased flex flex-col">
       {/* Top Application Header for ENF Workspace */}
@@ -80,7 +159,7 @@ export const EnfPortalRoot: React.FC<EnfPortalRootProps> = ({ currentPath, onNav
 
             <div className="hidden md:flex items-center gap-1.5 border-l border-slate-200 pl-3">
               <span className="rounded bg-[#0078CE]/10 px-2 py-0.5 text-[10px] font-bold text-[#002D5B] uppercase font-mono">
-                ENF PORTAL
+                COMMERCIAL ENF PORTAL
               </span>
             </div>
           </div>
@@ -89,21 +168,28 @@ export const EnfPortalRoot: React.FC<EnfPortalRootProps> = ({ currentPath, onNav
           <nav className="hidden lg:flex items-center gap-1 text-xs font-semibold">
             {[
               { path: '/enf/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-              { path: '/enf/order', label: 'Plans & Orders', icon: ShoppingBag },
-              { path: '/enf/builder', label: 'ENF Builder', icon: Compass },
-              { path: '/enf/wallet', label: 'Credit Wallet', icon: CreditCard },
+              { path: '/enf/development', label: 'Milestones', icon: Compass },
+              { path: '/enf/plans', label: 'Plans & Orders', icon: ShoppingBag },
+              { path: '/enf/customize', label: 'Builder', icon: Compass },
+              { path: '/enf/wallet', label: 'Credits & Wallet', icon: CreditCard },
+              { path: '/enf/transactions', label: 'Receipts', icon: History },
               { path: '/enf/documents', label: 'Documents', icon: FileText },
-              { path: '/enf/clients', label: 'Clients', icon: Users },
               { path: '/enf/research', label: 'AI Research', icon: Sparkles },
-              { path: '/enf/admin', label: 'Admin Desk', icon: Shield },
+              { path: '/admin/payments', label: 'Admin Desk', icon: Shield },
             ].map((item) => {
               const Icon = item.icon;
-              const isActive = normalized === item.path;
+              const isActive =
+                normalized === item.path ||
+                (item.path === '/admin/payments' && (normalized === '/enf/admin' || normalized.startsWith('/admin'))) ||
+                (item.path === '/enf/plans' && (normalized === '/enf/checkout' || normalized === '/enf/payment' || normalized === '/enf/order')) ||
+                (item.path === '/enf/customize' && normalized === '/enf/builder') ||
+                (item.path === '/enf/wallet' && normalized === '/enf/credits');
+
               return (
                 <button
                   key={item.path}
                   onClick={() => onNavigate(item.path)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors ${
                     isActive
                       ? 'bg-[#002D5B] text-white font-bold'
                       : 'text-slate-600 hover:text-[#002D5B] hover:bg-slate-100'
@@ -150,19 +236,40 @@ export const EnfPortalRoot: React.FC<EnfPortalRootProps> = ({ currentPath, onNav
               )}
             </div>
 
-            {/* Profile Wizard Trigger */}
-            <button
-              onClick={() => onNavigate('/enf/profile')}
-              className="flex items-center gap-1.5 rounded-lg border border-[#D9E1E8] px-2.5 py-1.5 text-xs font-semibold text-[#002D5B] hover:bg-[#F4F7F9] cursor-pointer"
-            >
-              <User className="h-3.5 w-3.5 text-[#0078CE]" />
-              <span className="hidden sm:inline">Profile</span>
-            </button>
+            {/* Profile or Sign In */}
+            {currentUser ? (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => onNavigate('/enf/profile')}
+                  className="flex items-center gap-1.5 rounded-lg border border-[#D9E1E8] px-2.5 py-1.5 text-xs font-semibold text-[#002D5B] hover:bg-[#F4F7F9] cursor-pointer max-w-[130px] sm:max-w-xs truncate"
+                  title={`${currentUser.fullName} (${currentUser.role})`}
+                >
+                  <User className="h-3.5 w-3.5 text-[#0078CE] shrink-0" />
+                  <span className="truncate">{currentUser.fullName.split(' ')[0]}</span>
+                </button>
+
+                <button
+                  onClick={handleLogout}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#D9E1E8] text-slate-500 hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                  title="Sign Out"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => onNavigate('/enf/login')}
+                className="flex items-center gap-1.5 rounded-lg bg-[#002D5B] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#0078CE] transition-all cursor-pointer"
+              >
+                <LogIn className="h-3.5 w-3.5" />
+                <span>Sign In</span>
+              </button>
+            )}
 
             {/* Return to Main JuriMbrella Platform */}
             <button
               onClick={() => onNavigate('/')}
-              className="rounded-lg bg-[#0078CE]/10 px-3 py-1.5 text-xs font-bold text-[#002D5B] hover:bg-[#0078CE]/20 transition-colors cursor-pointer whitespace-nowrap"
+              className="hidden sm:inline-block rounded-lg bg-[#0078CE]/10 px-3 py-1.5 text-xs font-bold text-[#002D5B] hover:bg-[#0078CE]/20 transition-colors cursor-pointer whitespace-nowrap"
             >
               Main eNotary →
             </button>
@@ -172,39 +279,65 @@ export const EnfPortalRoot: React.FC<EnfPortalRootProps> = ({ currentPath, onNav
 
       {/* Main Routed Content Area */}
       <main className="flex-1">
-        {normalized === '/enf/dashboard' && <EnfDashboardView onNavigate={onNavigate} />}
-        {(normalized === '/enf/order' || normalized === '/enf/payment' || normalized === '/enf/plans') && (
+        {normalized === '/enf/dashboard' && <EnfDashboardView onNavigate={onNavigate} userId={actualUserId} />}
+
+        {normalized === '/enf/development' && <EnfDevelopmentView onNavigate={onNavigate} userId={actualUserId} />}
+
+        {(normalized === '/enf/order' ||
+          normalized === '/enf/payment' ||
+          normalized === '/enf/plans' ||
+          normalized === '/enf/checkout') && (
           <EnfPlansAndCheckoutView
             initialPlanId={selectedPlanId}
             onNavigate={onNavigate}
-            onPaymentSubmitted={() => onNavigate('/enf/dashboard')}
+            onPaymentSubmitted={() => onNavigate('/enf/transactions')}
           />
         )}
-        {normalized === '/enf/builder' && <EnfBuilderView onNavigate={onNavigate} />}
-        {normalized === '/enf/wallet' && <EnfCreditWalletView onNavigate={onNavigate} />}
+
+        {(normalized === '/enf/builder' || normalized === '/enf/customize') && (
+          <EnfBuilderView onNavigate={onNavigate} userId={actualUserId} />
+        )}
+
+        {(normalized === '/enf/wallet' || normalized === '/enf/credits') && (
+          <EnfCreditWalletView onNavigate={onNavigate} userId={actualUserId} />
+        )}
+
+        {normalized === '/enf/transactions' && (
+          <EnfTransactionsView onNavigate={onNavigate} userId={actualUserId} />
+        )}
+
         {normalized === '/enf/clients' && <EnfClientsView onNavigate={onNavigate} />}
         {normalized === '/enf/documents' && <EnfDocumentsView onNavigate={onNavigate} />}
         {normalized === '/enf/research' && <EnfAiResearchView onNavigate={onNavigate} />}
         {normalized === '/enf/support' && <EnfSupportView onNavigate={onNavigate} />}
-        {normalized === '/enf/profile' && <EnfCustomerProfileWizard onNavigate={onNavigate} />}
-        {normalized === '/enf/admin' && <EnfAdminPortalView onNavigate={onNavigate} />}
+        {normalized === '/enf/profile' && <EnfCustomerProfileWizard onNavigate={onNavigate} userId={actualUserId} />}
+
+        {/* Commercial Admin Desk (Sections 13, 24, 25) */}
+        {(normalized === '/enf/admin' || normalized === '/admin' || normalized.startsWith('/admin/')) && (
+          <EnfAdminPortalView onNavigate={onNavigate} initialTab={getAdminTab()} />
+        )}
 
         {/* Fallback to Dashboard if path starts with /enf/ but isn't explicitly matched */}
         {normalized.startsWith('/enf/') &&
           ![
             '/enf/dashboard',
+            '/enf/development',
             '/enf/order',
+            '/enf/checkout',
             '/enf/payment',
             '/enf/plans',
             '/enf/builder',
+            '/enf/customize',
             '/enf/wallet',
+            '/enf/credits',
+            '/enf/transactions',
             '/enf/clients',
             '/enf/documents',
             '/enf/research',
             '/enf/support',
             '/enf/profile',
             '/enf/admin',
-          ].includes(normalized) && <EnfDashboardView onNavigate={onNavigate} />}
+          ].includes(normalized) && <EnfDashboardView onNavigate={onNavigate} userId={actualUserId} />}
       </main>
     </div>
   );

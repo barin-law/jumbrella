@@ -508,6 +508,15 @@ export class EnfStorageService {
     const now = new Date().toISOString();
 
     if (action === 'CONFIRM') {
+      // Idempotency: Prevent duplicate credit issuance if already confirmed
+      if (payment.status === 'PAID' || order.status === 'ACTIVATED') {
+        return {
+          success: true,
+          message: `Payment has already been confirmed and processed (Receipt: ${payment.receiptNumber || 'Issued'}). No duplicate credits were issued.`,
+          receiptNumber: payment.receiptNumber,
+        };
+      }
+
       const receiptNumber = `JUR-RCPT-2026-${Math.floor(100000 + Math.random() * 900000)}`;
 
       // 1. Mark payment PAID

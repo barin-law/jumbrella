@@ -114,6 +114,82 @@ export const EnfCustomerProfileWizard: React.FC<EnfCustomerProfileWizardProps> =
           </div>
         )}
 
+        {/* Section 8: Customer Experience Orientation Card (Answers the 7 Key Questions) */}
+        {(() => {
+          const orders = EnfStorageService.getOrders();
+          const userOrder = orders.find((o) => o.customerId === userId) || orders[0];
+          const wallet = EnfStorageService.getOrCreateWallet(userId);
+          const isPaid = userOrder && (userOrder.status === 'PAID' || userOrder.status === 'ACTIVATED');
+
+          return (
+            <div className="rounded-2xl border border-[#002D5B] bg-[#002D5B] text-white p-5 sm:p-6 shadow-md space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
+                <span className="text-[11px] font-bold text-[#A8E063] uppercase tracking-wider font-mono">
+                  CUSTOMER EXPERIENCE & ORIENTATION DESK
+                </span>
+                <span className="text-[10px] text-slate-300 font-mono">
+                  Profile Completion: {Math.round((step / 4) * 100)}%
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                  <span className="text-slate-300 block text-[10px] uppercase font-bold text-[#A8E063]">WHERE AM I?</span>
+                  <span className="font-bold text-white">Step {step} of 4: Customer Profile Setup</span>
+                </div>
+
+                <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                  <span className="text-slate-300 block text-[10px] uppercase font-bold text-[#A8E063]">WHAT DO I NEED TO DO?</span>
+                  <span className="font-bold text-white">
+                    {step === 1 && 'Fill out your contact details'}
+                    {step === 2 && 'Enter IBP Roll & Commission information'}
+                    {step === 3 && 'Provide law office address & practice areas'}
+                    {step === 4 && 'Select your intended notarial services'}
+                  </span>
+                </div>
+
+                <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                  <span className="text-slate-300 block text-[10px] uppercase font-bold text-[#A8E063]">WHAT HAVE I PAID?</span>
+                  <span className="font-bold text-white font-mono">
+                    {userOrder ? `₱${userOrder.amountPhp.toLocaleString()}.00 (${userOrder.planName})` : '₱0.00 (Pending Selection)'}
+                  </span>
+                </div>
+
+                <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                  <span className="text-slate-300 block text-[10px] uppercase font-bold text-[#A8E063]">WHAT HAVE I RECEIVED?</span>
+                  <span className="font-bold text-white">
+                    {isPaid ? 'Active ENF Development Access & Subdomain' : 'Pending Administrative Payment Verification'}
+                  </span>
+                </div>
+
+                <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                  <span className="text-slate-300 block text-[10px] uppercase font-bold text-[#A8E063]">WHAT IS MY CREDIT BALANCE?</span>
+                  <span className="font-bold text-[#A8E063] font-mono text-sm">
+                    {wallet.availableCredits} Credits (₱{wallet.availableBalancePhp.toLocaleString()})
+                  </span>
+                </div>
+
+                <div className="bg-white/5 rounded-xl p-3 border border-white/10">
+                  <span className="text-slate-300 block text-[10px] uppercase font-bold text-[#A8E063]">WHAT IS MY DISCOUNT?</span>
+                  <span className="font-bold text-[#A8E063] font-mono text-sm">
+                    {(wallet.currentDiscountRate * 100).toFixed(0)}% OFF Technical Fees
+                  </span>
+                </div>
+              </div>
+
+              <div className="pt-1 text-[11px] text-slate-300 flex items-center justify-between border-t border-white/10">
+                <span>
+                  <strong className="text-white">WHAT HAPPENS NEXT? </strong>
+                  Complete your profile and proceed to customize your branding, document seals, and notarial intake workflows.
+                </span>
+                <span className="rounded bg-[#2EAF4A]/30 text-[#A8E063] px-2 py-0.5 font-bold font-mono text-[10px] shrink-0 ml-2">
+                  ACTIVE
+                </span>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Wizard Progress Bar */}
         <div className="grid grid-cols-4 gap-2 bg-white p-2 rounded-xl border border-[#D9E1E8] shadow-2xs text-center text-xs font-bold">
           <button

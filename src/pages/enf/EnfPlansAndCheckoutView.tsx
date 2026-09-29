@@ -15,6 +15,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { EnfStorageService } from '../../services/enf/enfStorageService';
+import { EnfAuthService } from '../../services/enf/enfAuthService';
 import { ENFPlan, ENFOrder, ENFBankConfig } from '../../types/enf';
 import { BrandLogo } from '../../components/common/BrandLogo';
 
@@ -29,39 +30,75 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
   onNavigate,
   onPaymentSubmitted,
 }) => {
+  const currentUser = EnfAuthService.getCurrentUser();
+
   const [plans] = useState<ENFPlan[]>(() => EnfStorageService.getPlans());
   const [bankConfig] = useState<ENFBankConfig>(() => EnfStorageService.getBankConfig());
-  const [selectedPlanId, setSelectedPlanId] = useState<string>(initialPlanId || plans[1]?.id || plans[0]?.id);
 
-  // Customer information
-  const [customerName, setCustomerName] = useState('Atty. Maria Elena Santos, En.P.');
-  const [customerEmail, setCustomerEmail] = useState('atty.santos@santoslaw.ph');
-  const [customerPhone, setCustomerPhone] = useState('+63 917 555 4921');
+  // Parse URL search params for planId or orderId
+  const getUrlParams = () => {
+    try {
+      const search = window.location.search;
+      const params = new URLSearchParams(search);
+      return {
+        planId: params.get('planId'),
+        orderId: params.get('orderId'),
+      };
+    } catch {
+      return { planId: null, orderId: null };
+    }
+  };
+
+  const urlParams = getUrlParams();
+
+  const [selectedPlanId, setSelectedPlanId] = useState<string>(
+    urlParams.planId || initialPlanId || plans[1]?.id || plans[0]?.id
+  );
+
+  // Customer information linked to authenticated session if present
+  const [customerName, setCustomerName] = useState(
+    currentUser?.fullName || 'Atty. Maria Elena Santos, En.P.'
+  );
+  const [customerEmail, setCustomerEmail] = useState(
+    currentUser?.email || 'atty.santos@santoslaw.ph'
+  );
+  const [customerPhone, setCustomerPhone] = useState(
+    currentUser?.phone || '+63 917 555 4921'
+  );
 
   // Checkout stage
-  const [stage, setStage] = useState<'SELECT_PLAN' | 'ORDER_REVIEW' | 'SUBMIT_PAYMENT' | 'PAYMENT_PENDING'>('SELECT_PLAN');
-  const [activeOrder, setActiveOrder] = useState<ENFOrder | null>(null);
+  const [stage, setStage] = useState<'SELECT_PLAN' | 'ORDER_REVIEW' | 'SUBMIT_PAYMENT' | 'PAYMENT_PENDING'>(
+    urlParams.orderId ? 'SUBMIT_PAYMENT' : 'SELECT_PLAN'
+  );
+  const [activeOrder, setActiveOrder] = useState<ENFOrder | null>(() => {
+    if (urlParams.orderId) {
+      const allOrders = EnfStorageService.getOrders();
+      return allOrders.find((o) => o.id === urlParams.orderId) || null;
+    }
+    return null;
+  });
 
   // Bank transfer proof submission fields
   const [senderBank, setSenderBank] = useState('BDO Unibank');
   const [transferDate, setTransferDate] = useState(new Date().toISOString().split('T')[0]);
   const [transferTime, setTransferTime] = useState('11:30 AM');
   const [transferAmount, setTransferAmount] = useState<number>(50000);
-  const [senderName, setSenderName] = useState('Maria Elena Santos');
+  const [senderName, setSenderName] = useState(currentUser?.fullName || 'Maria Elena Santos');
   const [bankTransactionRef, setBankTransactionRef] = useState('BDO-TX-');
   const [proofFileName, setProofFileName] = useState('');
   const [proofFileType, setProofFileType] = useState('');
   const [proofPreviewUrl, setProofPreviewUrl] = useState('');
+  const [fileError, setFileError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId) || plans[0];
 
   useEffect(() => {
-    if (selectedPlan) {
+    if (selectedPlan && !activeOrder) {
       setTransferAmount(selectedPlan.pricePhp);
     }
-  }, [selectedPlan]);
+  }, [selectedPlan, activeOrder]);
 
   const copyToClipboard = (text: string, fieldId: string) => {
     navigator.clipboard.writeText(text);
@@ -72,21 +109,33 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
   const handleCreateOrder = (e: React.FormEvent) => {
     e.preventDefault();
     const order = EnfStorageService.createOrder(selectedPlanId, {
-      id: 'demo-enf-owner-1',
+      id: currentUser?.id || 'demo-enf-owner-1',
       name: customerName,
       email: customerEmail,
       phone: customerPhone,
     });
     setActiveOrder(order);
+    setTransferAmount(order.amountPhp);
     setBankTransactionRef(`BNK-${Date.now().toString().slice(-6)}`);
     setStage('SUBMIT_PAYMENT');
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFileError(null);
     const file = e.target.files?.[0];
     if (file) {
+      const allowedExtensions = ['.jpg', '.jpeg', '.png', '.pdf'];
+      const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+      if (!allowedExtensions.includes(ext)) {
+        setFileError('Invalid file type. Only JPG, PNG, and PDF files are accepted.');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        setFileError('File size exceeds the 10 MB limit. Please upload a smaller file.');
+        return;
+      }
       setProofFileName(file.name);
-      setProofFileType(file.type);
+      setProofFileType(file.type || 'application/pdf');
       const reader = new FileReader();
       reader.onload = () => {
         setProofPreviewUrl(reader.result as string);
@@ -517,7 +566,12 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
                     <p className="text-[10px] text-slate-500">
                       Supports JPG, PNG, PDF up to 10 MB
                     </p>
-                    {proofFileName && (
+                    {fileError && (
+                      <span className="rounded bg-red-100 text-red-700 px-2.5 py-1 text-xs font-bold">
+                        ⚠ {fileError}
+                      </span>
+                    )}
+                    {proofFileName && !fileError && (
                       <span className="rounded bg-[#2EAF4A]/20 px-2.5 py-0.5 text-xs font-bold text-[#1B6C2E]">
                         ✓ File Attached: {proofFileName}
                       </span>
