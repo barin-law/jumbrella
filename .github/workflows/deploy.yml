@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -21,24 +21,28 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v6
         with:
           node-version: 24
+          cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Build application
         run: npm run build
 
       - name: Verify build output
         run: |
-          echo "Checking dist directory..."
-          test -d dist || (echo "ERROR: dist directory was not created" && exit 1)
-          ls -la dist
+          test -d dist
+          test -f dist/index.html
+          echo "Build output:"
+          ls -lah dist
+          echo "Asset references:"
+          grep -oE '(src|href)="[^"]+"' dist/index.html || true
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
