@@ -450,7 +450,7 @@ const AppRouter: React.FC = () => {
    *
    * Current production configuration:
    *
-   * base: '/barinlaw/'
+   * base: '/jumbrella/'
    *
    * Remove the final slash so we can safely construct URLs.
    */
@@ -468,8 +468,8 @@ const AppRouter: React.FC = () => {
   const getAppPath = (): string => {
     let pathname = window.location.pathname || '/';
 
-    if (pathname.startsWith('/barinlaw/')) {
-      pathname = pathname.replace(/^\/barinlaw/, '');
+    if (pathname.startsWith('/jumbrella/')) {
+      pathname = pathname.replace(/^\/jumbrella/, '');
     } else if (pathname === '/barinlaw') {
       pathname = '/';
     }
