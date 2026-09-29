@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { EnfStorageService } from '../../services/enf/enfStorageService';
 import { EnfAuthService } from '../../services/enf/enfAuthService';
+import { ApiClient } from '../../services/apiClient';
 import {
   ENFPaymentSubmission,
   ENFOrder,
@@ -104,8 +105,8 @@ export const EnfAdminPortalView: React.FC<EnfAdminPortalViewProps> = ({
     setReports(EnfStorageService.getAdminReports());
   };
 
-  // Execution of payment verification action (Section 7 & 8)
-  const handleExecuteVerification = () => {
+  // Execution of payment verification action (Section 20 & 21)
+  const handleExecuteVerification = async () => {
     if (!actionModal.payment || !actionModal.type) return;
 
     if (!isAuthorized) {
@@ -114,17 +115,57 @@ export const EnfAdminPortalView: React.FC<EnfAdminPortalViewProps> = ({
       return;
     }
 
-    const res = EnfStorageService.verifyPayment(actionModal.payment.id, actionModal.type, {
-      reason: actionReason,
-      adminNotes,
-      actorEmail: currentUser?.email || 'finance@jurimbrella.ph',
-    });
+    const paymentId = actionModal.payment.id;
+    const actionType = actionModal.type;
 
-    setFeedback(res.message);
-    setActionModal({ type: null, payment: null });
-    setActionReason('');
-    reloadData();
-    setTimeout(() => setFeedback(null), 4000);
+    try {
+      if (actionType === 'CONFIRM') {
+        const res = await ApiClient.post(`/admin/payments/${paymentId}/verify`, {
+          reason: actionReason,
+          adminNotes,
+        });
+
+        if (res.success) {
+          setFeedback(res.message || 'Payment confirmed and credits issued.');
+        } else {
+          setFeedback(res.message || 'Payment confirmation failed.');
+        }
+      } else if (actionType === 'REJECT') {
+        const res = await ApiClient.post(`/admin/payments/${paymentId}/reject`, {
+          reason: actionReason,
+        });
+        setFeedback(res.message || 'Payment rejected.');
+      } else if (actionType === 'REQUEST_INFO') {
+        const res = await ApiClient.post(`/admin/payments/${paymentId}/request-info`, {
+          message: actionReason,
+        });
+        setFeedback(res.message || 'Information requested.');
+      }
+
+      // Also sync local storage engine
+      EnfStorageService.verifyPayment(paymentId, actionType, {
+        reason: actionReason,
+        adminNotes,
+        actorEmail: currentUser?.email || 'finance@jurimbrella.ph',
+      });
+
+      setActionModal({ type: null, payment: null });
+      setActionReason('');
+      reloadData();
+      setTimeout(() => setFeedback(null), 4000);
+    } catch {
+      // Offline fallback
+      const res = EnfStorageService.verifyPayment(paymentId, actionType, {
+        reason: actionReason,
+        adminNotes,
+        actorEmail: currentUser?.email || 'finance@jurimbrella.ph',
+      });
+      setFeedback(res.message);
+      setActionModal({ type: null, payment: null });
+      setActionReason('');
+      reloadData();
+      setTimeout(() => setFeedback(null), 4000);
+    }
   };
 
   const handleSavePlan = (e: React.FormEvent) => {
@@ -214,32 +255,9 @@ export const EnfAdminPortalView: React.FC<EnfAdminPortalViewProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => {
-                const s = EnfAuthService.switchActiveUser('finance-1');
-                if (s) {
-                  setCurrentUser(EnfAuthService.getCurrentUser());
-                  setFeedback('Switched active session to Rowena Garcia (FINANCE).');
-                  setTimeout(() => setFeedback(null), 3000);
-                }
-              }}
-              className="rounded-md border border-[#D9E1E8] bg-white px-2.5 py-1 text-[11px] font-bold text-[#002D5B] hover:bg-slate-50 cursor-pointer"
-            >
-              Switch to Finance Officer
-            </button>
-            <button
-              onClick={() => {
-                const s = EnfAuthService.switchActiveUser('superadmin-1');
-                if (s) {
-                  setCurrentUser(EnfAuthService.getCurrentUser());
-                  setFeedback('Switched active session to Executive Director (SUPER_ADMIN).');
-                  setTimeout(() => setFeedback(null), 3000);
-                }
-              }}
-              className="rounded-md border border-[#D9E1E8] bg-white px-2.5 py-1 text-[11px] font-bold text-[#0078CE] hover:bg-slate-50 cursor-pointer"
-            >
-              Switch to Super Admin
-            </button>
+            <span className="rounded-md border border-[#D9E1E8] bg-white px-2.5 py-1 text-[11px] font-bold text-[#002D5B] font-mono">
+              Status: {isAuthorized ? 'Authorized Session' : 'Unprivileged Session'}
+            </span>
           </div>
         </div>
 

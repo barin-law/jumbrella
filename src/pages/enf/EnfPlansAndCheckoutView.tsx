@@ -1,23 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import {
-  CreditCard,
   Building,
   CheckCircle2,
   AlertCircle,
   Upload,
-  FileText,
   Copy,
   Check,
   ArrowRight,
   ShieldCheck,
   Clock,
-  Info,
   Lock,
 } from 'lucide-react';
 import { EnfStorageService } from '../../services/enf/enfStorageService';
 import { EnfAuthService } from '../../services/enf/enfAuthService';
+import { ApiClient } from '../../services/apiClient';
 import { ENFPlan, ENFOrder, ENFBankConfig } from '../../types/enf';
-import { BrandLogo } from '../../components/common/BrandLogo';
 
 interface EnfPlansAndCheckoutViewProps {
   initialPlanId?: string;
@@ -57,13 +54,13 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
 
   // Customer information linked to authenticated session if present
   const [customerName, setCustomerName] = useState(
-    currentUser?.fullName || 'Atty. Maria Elena Santos, En.P.'
+    currentUser?.fullName || ''
   );
   const [customerEmail, setCustomerEmail] = useState(
-    currentUser?.email || 'atty.santos@santoslaw.ph'
+    currentUser?.email || ''
   );
   const [customerPhone, setCustomerPhone] = useState(
-    currentUser?.phone || '+63 917 555 4921'
+    currentUser?.phone || ''
   );
 
   // Checkout stage
@@ -83,7 +80,7 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
   const [transferDate, setTransferDate] = useState(new Date().toISOString().split('T')[0]);
   const [transferTime, setTransferTime] = useState('11:30 AM');
   const [transferAmount, setTransferAmount] = useState<number>(50000);
-  const [senderName, setSenderName] = useState(currentUser?.fullName || 'Maria Elena Santos');
+  const [senderName, setSenderName] = useState(currentUser?.fullName || '');
   const [bankTransactionRef, setBankTransactionRef] = useState('BDO-TX-');
   const [proofFileName, setProofFileName] = useState('');
   const [proofFileType, setProofFileType] = useState('');
@@ -91,8 +88,18 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
   const [fileError, setFileError] = useState<string | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId) || plans[0];
+
+  useEffect(() => {
+    if (currentUser) {
+      if (!customerName) setCustomerName(currentUser.fullName);
+      if (!customerEmail) setCustomerEmail(currentUser.email);
+      if (!customerPhone && currentUser.phone) setCustomerPhone(currentUser.phone);
+      if (!senderName) setSenderName(currentUser.fullName);
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     if (selectedPlan && !activeOrder) {
@@ -106,18 +113,50 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const handleCreateOrder = (e: React.FormEvent) => {
+  const handleCreateOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    const order = EnfStorageService.createOrder(selectedPlanId, {
-      id: currentUser?.id || 'demo-enf-owner-1',
-      name: customerName,
-      email: customerEmail,
-      phone: customerPhone,
-    });
-    setActiveOrder(order);
-    setTransferAmount(order.amountPhp);
-    setBankTransactionRef(`BNK-${Date.now().toString().slice(-6)}`);
-    setStage('SUBMIT_PAYMENT');
+    setApiError(null);
+
+    // If user is not authenticated, redirect to sign in and preserve selected plan
+    if (!currentUser) {
+      onNavigate(`/enf/login?returnTo=${encodeURIComponent(`/enf/checkout?planId=${selectedPlanId}`)}`);
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      // Create order via server API
+      const res = await ApiClient.post('/enf/orders', {
+        planId: selectedPlanId,
+      });
+
+      if (res.success && res.data?.order) {
+        const order = res.data.order as ENFOrder;
+        setActiveOrder(order);
+        setTransferAmount(order.amountPhp);
+        setBankTransactionRef(`BNK-${Date.now().toString().slice(-6)}`);
+        setStage('SUBMIT_PAYMENT');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Fallback to local storage engine if offline
+      const localOrder = EnfStorageService.createOrder(selectedPlanId, {
+        id: currentUser.id,
+        name: customerName || currentUser.fullName,
+        email: customerEmail || currentUser.email,
+        phone: customerPhone || currentUser.phone,
+      });
+      setActiveOrder(localOrder);
+      setTransferAmount(localOrder.amountPhp);
+      setBankTransactionRef(`BNK-${Date.now().toString().slice(-6)}`);
+      setStage('SUBMIT_PAYMENT');
+      setIsSubmitting(false);
+    } catch {
+      setIsSubmitting(false);
+      setApiError('Failed to initialize development order. Please check network connection.');
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -144,67 +183,97 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
     }
   };
 
-  const handleSubmitProof = (e: React.FormEvent) => {
+  const handleSubmitProof = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeOrder) return;
 
-    setIsSubmitting(true);
-    setTimeout(() => {
-      EnfStorageService.submitPayment({
-        orderId: activeOrder.id,
-        paymentRef: activeOrder.paymentRef,
-        customerId: activeOrder.customerId,
-        customerName: senderName || activeOrder.customerName,
-        bankName: senderBank,
-        transferDate,
-        transferTime,
-        amountPhp: transferAmount,
-        senderName,
-        bankTransactionRef,
-        proofFileName: proofFileName || 'Deposit_Transfer_Slip.pdf',
-        proofFileType: proofFileType || 'application/pdf',
-        proofFileDataUrl: proofPreviewUrl,
-      });
+    if (!proofFileName) {
+      setFileError('Please attach your deposit slip or transfer screenshot.');
+      return;
+    }
 
+    setIsSubmitting(true);
+    setApiError(null);
+
+    const payload = {
+      orderId: activeOrder.id,
+      paymentRef: activeOrder.paymentRef,
+      customerId: activeOrder.customerId,
+      customerName: senderName || activeOrder.customerName,
+      bankName: senderBank,
+      transferDate,
+      transferTime,
+      amountPhp: transferAmount,
+      senderName,
+      bankTransactionRef,
+      proofFileName,
+      proofFileType,
+      proofFileDataUrl: proofPreviewUrl,
+    };
+
+    try {
+      // Submit payment via server API
+      const res = await ApiClient.post('/enf/payments', payload);
+      setIsSubmitting(false);
+
+      if (res.success) {
+        // Also save to local storage engine
+        EnfStorageService.submitPayment(payload);
+        setStage('PAYMENT_PENDING');
+        if (onPaymentSubmitted) {
+          onPaymentSubmitted(activeOrder.id);
+        }
+      } else {
+        setApiError(res.message || 'Payment submission could not be verified by server.');
+      }
+    } catch {
+      // Fallback to local storage engine
+      EnfStorageService.submitPayment(payload);
       setIsSubmitting(false);
       setStage('PAYMENT_PENDING');
       if (onPaymentSubmitted) {
         onPaymentSubmitted(activeOrder.id);
       }
-    }, 600);
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#F4F7F9] text-[#17212B] font-sans antialiased py-8 sm:py-12">
       <div className="mx-auto max-w-4xl px-4 sm:px-6 space-y-8">
         {/* Navigation Breadcrumbs / Title */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#D9E1E8] pb-5">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => onNavigate('/enf')}
-              className="flex items-center gap-2 text-xs font-semibold text-[#0078CE] hover:underline cursor-pointer"
-            >
-              ← Back to ENF Portal
-            </button>
-            <span className="text-slate-300">/</span>
-            <span className="text-xs font-bold text-[#002D5B]">Development Plan Checkout</span>
+        <div className="flex items-center justify-between border-b border-[#D9E1E8] pb-4">
+          <div>
+            <span className="text-[10px] font-bold text-[#0078CE] uppercase font-mono">
+              Electronic Notarial Facility Onboarding
+            </span>
+            <h1 className="text-xl sm:text-2xl font-black text-[#002D5B]">
+              Commercial Plan Selection & Checkout
+            </h1>
           </div>
-
-          <div className="flex items-center gap-2 text-xs font-mono bg-white px-3 py-1 rounded-lg border border-[#D9E1E8]">
-            <Lock className="h-3.5 w-3.5 text-[#0078CE]" />
-            <span className="text-[#002D5B] font-semibold">256-Bit Cryptographic Checkout</span>
-          </div>
+          <button
+            onClick={() => onNavigate('/enf/dashboard')}
+            className="text-xs font-bold text-slate-500 hover:text-[#002D5B] cursor-pointer"
+          >
+            ← Return to Dashboard
+          </button>
         </div>
 
-        {/* STEP 1: Plan Selection & Customer Profile Details */}
+        {apiError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-800 flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
+            <span>{apiError}</span>
+          </div>
+        )}
+
+        {/* STEP 1: Plan Selection & Order Review (Section 12, 13, 14, 15) */}
         {stage === 'SELECT_PLAN' && (
           <div className="space-y-8">
             <div className="text-center max-w-xl mx-auto space-y-2">
-              <h1 className="text-2xl sm:text-3xl font-extrabold text-[#002D5B]">
-                Select Your ENF Development Offer
-              </h1>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-[#002D5B]">
+                Select Your ENF Commercial Package
+              </h2>
               <p className="text-xs sm:text-sm text-slate-600">
-                100% of your plan fee goes directly to usable prepaid technical credits. No setup or onboarding charges.
+                100% of your plan fee goes directly into usable prepaid notarial technical credits (₱100/credit base).
               </p>
             </div>
 
@@ -244,9 +313,10 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
                       </div>
 
                       <div className="text-[11px] text-slate-600 border-t border-slate-100 pt-2 space-y-1">
-                        <p>• ₱{p.creditAmountPhp.toLocaleString()} prepaid credit</p>
-                        <p>• ₱0 setup fee</p>
-                        <p>• Custom ENF Subdomain</p>
+                        <p className="font-bold text-[#002D5B]">• {p.creditsQuantity} Credits included</p>
+                        <p>• ₱{p.effectiveFeePhp} effective technical fee</p>
+                        <p>• ₱0 setup or onboarding fee</p>
+                        <p>• Custom ENF Subdomain & Seal</p>
                       </div>
                     </div>
 
@@ -254,7 +324,11 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
                       <span className="text-xs font-semibold text-slate-500">
                         {isSelected ? 'Selected' : 'Click to select'}
                       </span>
-                      <div className={`h-4 w-4 rounded-full border flex items-center justify-center ${isSelected ? 'border-[#0078CE] bg-[#0078CE] text-white' : 'border-slate-300'}`}>
+                      <div
+                        className={`h-4 w-4 rounded-full border flex items-center justify-center ${
+                          isSelected ? 'border-[#0078CE] bg-[#0078CE] text-white' : 'border-slate-300'
+                        }`}
+                      >
                         {isSelected && <Check className="h-3 w-3" />}
                       </div>
                     </div>
@@ -263,99 +337,93 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
               })}
             </div>
 
-            {/* Customer Details Form */}
-            <form onSubmit={handleCreateOrder} className="rounded-2xl border border-[#D9E1E8] bg-white p-6 sm:p-8 shadow-xs space-y-6">
-              <div className="border-b border-[#D9E1E8] pb-4">
-                <h3 className="text-lg font-bold text-[#002D5B]">ENF Subscriber & Organization Details</h3>
-                <p className="text-xs text-slate-500">
-                  These details will be registered on your Electronic Notarial Facility profile and official receipt.
-                </p>
+            {/* Authoritative Checkout Summary Card (Section 14) */}
+            <div className="rounded-2xl border-2 border-[#002D5B]/20 bg-white p-6 sm:p-8 shadow-sm space-y-6">
+              <div className="border-b border-[#D9E1E8] pb-4 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-[#002D5B]">Package Checkout Breakdown</h3>
+                  <p className="text-xs text-slate-500">
+                    Authoritative commercial allocation as specified by Supreme Court e-notarization technical rules.
+                  </p>
+                </div>
+                <span className="rounded bg-[#2EAF4A]/10 text-[#1B6C2E] px-2.5 py-1 text-xs font-bold font-mono">
+                  {selectedPlan.name}
+                </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-[#002D5B] mb-1">
-                    Subscriber / Notary Public Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    className="w-full rounded-lg border border-[#D9E1E8] p-2.5 text-xs text-[#17212B] focus:border-[#0078CE] focus:outline-none"
-                    placeholder="e.g. Atty. Juan Dela Cruz, En.P."
-                  />
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Purchase Price</span>
+                  <p className="text-base font-extrabold text-[#002D5B] font-mono mt-1">
+                    ₱{selectedPlan.pricePhp.toLocaleString()}
+                  </p>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#002D5B] mb-1">
-                    Official Email Address *
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={customerEmail}
-                    onChange={(e) => setCustomerEmail(e.target.value)}
-                    className="w-full rounded-lg border border-[#D9E1E8] p-2.5 text-xs text-[#17212B] focus:border-[#0078CE] focus:outline-none"
-                    placeholder="notary@lawfirm.ph"
-                  />
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Discount Rate</span>
+                  <p className="text-base font-extrabold text-[#0078CE] font-mono mt-1">
+                    {Math.round(selectedPlan.discountRate * 100)}%
+                  </p>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#002D5B] mb-1">
-                    Contact Phone Number *
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    className="w-full rounded-lg border border-[#D9E1E8] p-2.5 text-xs text-[#17212B] focus:border-[#0078CE] focus:outline-none"
-                    placeholder="+63 917 000 0000"
-                  />
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Effective Fee</span>
+                  <p className="text-base font-extrabold text-[#2EAF4A] font-mono mt-1">
+                    ₱{selectedPlan.effectiveFeePhp}
+                  </p>
                 </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Credits Allocation</span>
+                  <p className="text-base font-extrabold text-[#002D5B] font-mono mt-1">
+                    {selectedPlan.creditsQuantity}
+                  </p>
+                </div>
+              </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-[#002D5B] mb-1">
-                    Payment Method
-                  </label>
-                  <div className="rounded-lg border border-[#0078CE] bg-[#0078CE]/5 p-2.5 text-xs font-semibold text-[#002D5B] flex items-center justify-between">
-                    <span>Philippine Bank Transfer (BDO Unibank)</span>
-                    <span className="text-[10px] bg-[#2EAF4A] text-white px-2 py-0.5 rounded font-bold">Standard</span>
+              {/* Customer Details Form */}
+              <form onSubmit={handleCreateOrder} className="space-y-4 pt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-[#002D5B] mb-1">
+                      Subscriber / Notary Public Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      className="w-full rounded-lg border border-[#D9E1E8] p-2.5 text-xs text-[#17212B] focus:border-[#0078CE] focus:outline-none"
+                      placeholder="e.g. Atty. Juan Dela Cruz, En.P."
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#002D5B] mb-1">
+                      Official Email Address *
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={customerEmail}
+                      onChange={(e) => setCustomerEmail(e.target.value)}
+                      className="w-full rounded-lg border border-[#D9E1E8] p-2.5 text-xs text-[#17212B] focus:border-[#0078CE] focus:outline-none"
+                      placeholder="notary@lawfirm.ph"
+                    />
                   </div>
                 </div>
-              </div>
 
-              {/* Order Summary Box */}
-              <div className="rounded-xl border border-[#D9E1E8] bg-[#F4F7F9] p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs text-slate-500 font-medium">Selected Development Package:</p>
-                  <p className="text-base font-bold text-[#002D5B]">{selectedPlan.name}</p>
-                  <p className="text-xs text-[#2EAF4A] font-semibold mt-0.5">
-                    Includes ₱{selectedPlan.creditAmountPhp.toLocaleString()} usable credits & {(selectedPlan.discountRate * 100).toFixed(0)}% fee discount
-                  </p>
-                </div>
-
-                <div className="text-right">
-                  <p className="text-xs text-slate-500">Total Order Amount</p>
-                  <p className="text-2xl font-extrabold text-[#002D5B] font-mono">
-                    ₱{selectedPlan.pricePhp.toLocaleString()}.00
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full rounded-xl bg-[#002D5B] py-3.5 text-sm font-bold text-white hover:bg-[#0078CE] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <span>Generate Order & View Bank Instructions</span>
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="w-full rounded-xl bg-[#002D5B] py-3.5 text-sm font-bold text-white hover:bg-[#0078CE] transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 mt-4"
+                >
+                  <span>{isSubmitting ? 'Creating Order on Server...' : 'CREATE ORDER & VIEW PAYMENT INSTRUCTIONS'}</span>
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </form>
+            </div>
           </div>
         )}
 
-        {/* STEP 2: Bank Transfer Instructions & Proof Upload (Section 6) */}
+        {/* STEP 2: Bank Transfer Instructions & Proof Upload (Section 17 & 18) */}
         {stage === 'SUBMIT_PAYMENT' && activeOrder && (
           <div className="space-y-6">
             <div className="rounded-2xl border border-[#0078CE]/30 bg-white p-6 sm:p-8 shadow-md space-y-6">
@@ -369,8 +437,8 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
                   </h2>
                 </div>
                 <div className="text-right font-mono">
-                  <p className="text-xs text-slate-500">Order Reference</p>
-                  <p className="text-lg font-bold text-[#002D5B]">{activeOrder.id}</p>
+                  <p className="text-xs text-slate-500">Order Number</p>
+                  <p className="text-lg font-bold text-[#002D5B]">{activeOrder.orderNumber || activeOrder.id}</p>
                 </div>
               </div>
 
@@ -398,7 +466,7 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
                 </button>
               </div>
 
-              {/* Configurable Official Bank Details (Section 20) */}
+              {/* Official Bank Details */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="rounded-xl border border-[#D9E1E8] bg-[#F4F7F9] p-4 space-y-1">
                   <p className="text-[10px] font-bold text-slate-400 uppercase">Bank Name</p>
@@ -447,7 +515,7 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
                 <div>
                   <span className="font-bold">Administrative Verification Notice: </span>
                   <span>
-                    Payment is NOT automatically confirmed. Once your transfer is complete, submit your transaction reference and screenshot below. Administrative verification desk reconciles records within 1–3 hours during business days.
+                    Payment is NOT automatically confirmed. Submit your transaction reference and screenshot below. The administrative verification desk reconciles records within 1–3 hours during business days.
                   </span>
                 </div>
               </div>
@@ -595,14 +663,14 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
                   className="rounded-xl bg-[#2EAF4A] px-6 py-3 text-xs font-bold text-white hover:bg-[#258F3C] transition-all shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   <ShieldCheck className="h-4 w-4" />
-                  <span>{isSubmitting ? 'Transmitting Submission...' : 'Submit Payment for Verification'}</span>
+                  <span>{isSubmitting ? 'Transmitting Submission to Backend...' : 'Submit Payment for Verification'}</span>
                 </button>
               </div>
             </form>
           </div>
         )}
 
-        {/* STEP 3: Submission Confirmation / Pending Status (Section 6 & 24) */}
+        {/* STEP 3: Submission Confirmation / Pending Status (Section 19) */}
         {stage === 'PAYMENT_PENDING' && activeOrder && (
           <div className="rounded-2xl border border-[#2EAF4A]/40 bg-white p-6 sm:p-10 shadow-lg text-center space-y-6">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#2EAF4A]/10 text-[#2EAF4A]">
@@ -611,21 +679,22 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
 
             <div className="space-y-2 max-w-lg mx-auto">
               <span className="rounded-full bg-[#0078CE]/10 px-3 py-1 text-xs font-bold text-[#002D5B]">
-                STATUS: UNDER ADMINISTRATIVE REVIEW
+                STATUS: PAYMENT_SUBMITTED (UNDER ADMINISTRATIVE REVIEW)
               </span>
               <h2 className="text-2xl font-extrabold text-[#002D5B]">
                 Payment Submitted Successfully
               </h2>
               <p className="text-xs sm:text-sm text-slate-600">
-                Your payment submission for <strong>{activeOrder.planName}</strong> (Ref: <strong className="font-mono text-[#002D5B]">{activeOrder.paymentRef}</strong>) has been queued for verification.
+                Your payment submission for <strong>{activeOrder.planName}</strong> (Ref:{' '}
+                <strong className="font-mono text-[#002D5B]">{activeOrder.paymentRef}</strong>) has been queued for verification.
               </p>
             </div>
 
-            {/* Status Breakdown Box (Section 24 Customer Experience) */}
+            {/* Status Breakdown Box */}
             <div className="rounded-xl border border-[#D9E1E8] bg-[#F4F7F9] p-5 max-w-lg mx-auto text-left space-y-3 text-xs">
               <div className="flex justify-between border-b border-slate-200 pb-2">
                 <span className="text-slate-500">Order ID:</span>
-                <span className="font-bold text-[#002D5B] font-mono">{activeOrder.id}</span>
+                <span className="font-bold text-[#002D5B] font-mono">{activeOrder.orderNumber || activeOrder.id}</span>
               </div>
               <div className="flex justify-between border-b border-slate-200 pb-2">
                 <span className="text-slate-500">Submitted Amount:</span>
@@ -633,7 +702,7 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
               </div>
               <div className="flex justify-between border-b border-slate-200 pb-2">
                 <span className="text-slate-500">Credited on Approval:</span>
-                <span className="font-bold text-[#002D5B] font-mono">₱{activeOrder.creditAmountPhp.toLocaleString()}.00 Credits</span>
+                <span className="font-bold text-[#002D5B] font-mono">{activeOrder.creditsQuantity} Credits</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Applicable Discount Tier:</span>
@@ -644,9 +713,9 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
             <div className="rounded-lg border border-[#0078CE]/30 bg-[#0078CE]/5 p-4 max-w-lg mx-auto text-xs text-[#002D5B] text-left flex items-start gap-3">
               <Clock className="h-5 w-5 text-[#0078CE] shrink-0 mt-0.5" />
               <div>
-                <p className="font-bold">What happens next?</p>
+                <p className="font-bold">Next Steps:</p>
                 <p className="mt-1 text-slate-600">
-                  Our financial administrator will verify the funds against the corporate bank statement. Upon confirmation, your credit wallet is automatically funded, your discount is locked in, and your ENF customizer is ready for launch.
+                  Our treasury officer will verify your bank transfer. Upon approval, your credits will be activated immediately and an Official Receipt will be issued to your account.
                 </p>
               </div>
             </div>
@@ -658,16 +727,15 @@ export const EnfPlansAndCheckoutView: React.FC<EnfPlansAndCheckoutViewProps> = (
                 onClick={() => onNavigate('/enf/dashboard')}
                 className="w-full sm:w-auto rounded-xl bg-[#002D5B] px-6 py-3 text-xs font-bold text-white hover:bg-[#0078CE] transition-all shadow-md cursor-pointer"
               >
-                Go to ENF Customer Dashboard
+                Go to Customer Dashboard
               </button>
 
               <button
                 type="button"
-                onClick={() => onNavigate('/enf/admin')}
-                className="w-full sm:w-auto rounded-xl border border-[#002D5B] bg-white px-6 py-3 text-xs font-bold text-[#002D5B] hover:bg-[#F4F7F9] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                onClick={() => onNavigate('/enf/transactions')}
+                className="w-full sm:w-auto rounded-xl border border-[#002D5B] bg-white px-6 py-3 text-xs font-bold text-[#002D5B] hover:bg-[#F4F7F9] transition-all cursor-pointer"
               >
-                <Lock className="h-3.5 w-3.5 text-[#0078CE]" />
-                <span>Simulate Admin Verification Now</span>
+                View Purchase History & Receipts
               </button>
             </div>
           </div>

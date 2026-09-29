@@ -52,7 +52,11 @@ export const EnfTransactionsView: React.FC<EnfTransactionsViewProps> = ({
   });
 
   const [ledger] = useState<ENFCreditLedgerEntry[]>(() => {
-    return EnfStorageService.getLedger();
+    const all = EnfStorageService.getLedger();
+    if (currentUser && ['ADMIN', 'SUPER_ADMIN', 'FINANCE'].includes(currentUser.role)) {
+      return all;
+    }
+    return all.filter((l) => l.userId === actualUserId);
   });
 
   // Selected receipt for detailed itemized modal view

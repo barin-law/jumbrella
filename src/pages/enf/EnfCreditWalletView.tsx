@@ -14,6 +14,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { EnfStorageService } from '../../services/enf/enfStorageService';
+import { ApiClient } from '../../services/apiClient';
 import { ENFCreditWallet, ENFCreditLedgerEntry, ENFLedgerEntryType } from '../../types/enf';
 
 interface EnfCreditWalletViewProps {
@@ -46,25 +47,29 @@ export const EnfCreditWalletView: React.FC<EnfCreditWalletViewProps> = ({
     return item.type === filterType;
   });
 
-  const handleSimulateDebit = () => {
+  const handleSimulateDebit = async () => {
     setIsSimulating(true);
     setFeedbackMessage(null);
 
-    setTimeout(() => {
+    try {
+      const res = await ApiClient.post('/enf/wallet/use-credit');
+      if (res.success) {
+        setFeedbackMessage(res.message || '1 Notarial technical credit debited.');
+        reloadData();
+      } else {
+        setFeedbackMessage(res.message || 'Debit failed.');
+      }
+      setIsSimulating(false);
+    } catch {
       const res = EnfStorageService.debitTechnicalFee(
         userId,
         'srv-remote-notarization',
         `BENF-TX-${Date.now().toString().slice(-4)}`
       );
-
-      if (res.success) {
-        setFeedbackMessage(res.message);
-        reloadData();
-      } else {
-        setFeedbackMessage(res.message);
-      }
+      setFeedbackMessage(res.message);
+      reloadData();
       setIsSimulating(false);
-    }, 400);
+    }
   };
 
   const handleExportCsv = () => {

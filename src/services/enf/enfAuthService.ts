@@ -1,17 +1,15 @@
 /**
  * JuriMbrella — ENF Platform Production Authentication Service
  * 
- * Implements:
- * - Email & Password Registration with SHA-256 Cryptographic Hashing
- * - Secure Session Tokens & Expiry Management
- * - Email Verification Workflow
- * - Password Reset Architecture
- * - Role-Based Access Control (RBAC: CLIENT, ENF_OWNER, FINANCE, ADMIN, SUPER_ADMIN)
- * - Google Authentication Adapter Interface
- * - Audit Logging for all Authentication Events
+ * Interacts with authoritative server-side /api/auth endpoints:
+ * - Scrypt password hashing on server
+ * - Server-issued session tokens with 24-hour expiration
+ * - Real email verification enforcement
+ * - Password reset workflows
+ * - Role-Based Access Control verified server-side
  */
 
-import { sha256, deriveKeyPbkdf2 } from '../../utils/crypto';
+import { ApiClient, ApiUser } from '../apiClient';
 import { EnfStorageService } from './enfStorageService';
 
 export type ENFRole =
@@ -30,20 +28,16 @@ export interface ENFAuthUser {
   fullName: string;
   email: string;
   phone?: string;
-  passwordHash: string;
-  salt: string;
   role: ENFRole;
-  emailVerified: boolean;
-  verificationCode?: string;
-  resetToken?: string;
-  twoFactorEnabled: boolean;
-  twoFactorSecret?: string;
   organization?: string;
+  professionalInfo?: string;
+  emailVerified: boolean;
+  twoFactorEnabled: boolean;
   createdAt: string;
   lastLoginAt?: string;
 }
 
-export type SafeENFAuthUser = Omit<ENFAuthUser, 'passwordHash' | 'salt'>;
+export type SafeENFAuthUser = ENFAuthUser;
 
 export interface ENFAuthSession {
   token: string;
@@ -60,108 +54,67 @@ const STORAGE_KEYS = {
   SESSION: 'jurimbrella_enf_session_v2',
 };
 
-// Default seed users for immediate verification & testing
+// Seed users for offline fallback
 const DEFAULT_USERS_SEED: ENFAuthUser[] = [
   {
-    id: 'demo-enf-owner-1',
+    id: 'user-santos-1',
     fullName: 'Atty. Maria Elena Santos, En.P.',
     email: 'atty.santos@santoslaw.ph',
     phone: '+63 917 555 4921',
-    passwordHash: '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', // 'admin123'
-    salt: 'jm_salt_santos',
     role: 'ENF_OWNER',
     emailVerified: true,
     twoFactorEnabled: false,
     organization: 'Santos & Associates Law Chambers',
+    professionalInfo: 'Roll No. 67890 / IBP Makati / Notarial Commission No. 2026-042',
     createdAt: '2026-01-15T08:00:00.000Z',
-    lastLoginAt: new Date().toISOString(),
   },
   {
-    id: 'admin-1',
-    fullName: 'JuriMbrella Compliance Admin',
+    id: 'user-admin-1',
+    fullName: 'JuriMbrella Platform Administrator',
     email: 'admin@jurimbrella.ph',
     phone: '+63 2 8892 4821',
-    passwordHash: '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918',
-    salt: 'jm_salt_admin',
     role: 'ADMIN',
     emailVerified: true,
     twoFactorEnabled: true,
     organization: 'JuriMbrella Platform Operations',
+    professionalInfo: 'Roll No. 58190 / Supreme Court ENF Oversight',
     createdAt: '2026-01-01T00:00:00.000Z',
-    lastLoginAt: new Date().toISOString(),
   },
   {
-    id: 'finance-1',
-    fullName: 'Rowena Garcia (Finance Officer)',
+    id: 'user-finance-1',
+    fullName: 'Rowena Garcia (Treasury & Finance Officer)',
     email: 'finance@jurimbrella.ph',
     phone: '+63 2 8892 4822',
-    passwordHash: '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918',
-    salt: 'jm_salt_finance',
     role: 'FINANCE',
     emailVerified: true,
     twoFactorEnabled: true,
     organization: 'JuriMbrella Treasury & Finance',
+    professionalInfo: 'CPA Reg No. 109284 / Financial Verification Desk',
     createdAt: '2026-01-01T00:00:00.000Z',
-    lastLoginAt: new Date().toISOString(),
   },
   {
-    id: 'superadmin-1',
+    id: 'user-superadmin-1',
     fullName: 'JuriMbrella Executive Director',
     email: 'superadmin@jurimbrella.ph',
     phone: '+63 2 8892 4820',
-    passwordHash: '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918',
-    salt: 'jm_salt_superadmin',
     role: 'SUPER_ADMIN',
     emailVerified: true,
     twoFactorEnabled: true,
     organization: 'JuriMbrella Legal Technology Corp.',
+    professionalInfo: 'Roll No. 41920 / Board of Directors',
     createdAt: '2026-01-01T00:00:00.000Z',
-    lastLoginAt: new Date().toISOString(),
   },
 ];
 
 export class EnfAuthService {
-  private static getUsers(): ENFAuthUser[] {
-    try {
-      const data = localStorage.getItem(STORAGE_KEYS.USERS);
-      if (!data) {
-        localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(DEFAULT_USERS_SEED));
-        return DEFAULT_USERS_SEED;
-      }
-      return JSON.parse(data) as ENFAuthUser[];
-    } catch {
-      return DEFAULT_USERS_SEED;
-    }
-  }
-
-  private static saveUsers(users: ENFAuthUser[]): void {
-    try {
-      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-    } catch (e) {
-      console.warn('Failed to save users:', e);
-    }
-  }
-
-  private static sanitizeUser(user: ENFAuthUser): SafeENFAuthUser {
-    // Security: Never leak passwordHash or salt to caller
-    const { passwordHash, salt, ...safeUser } = user;
-    return safeUser;
-  }
-
   /**
-   * Hashes a password using PBKDF2 with HMAC-SHA-256 (100,000 iterations).
-   * Meets NIST standards for password-based key derivation (Section 8).
-   */
-  public static async hashPassword(password: string, salt: string): Promise<string> {
-    return deriveKeyPbkdf2(password, salt);
-  }
-
-  /**
-   * Retrieves the current authenticated session.
-   * Enforces session expiration (24 hours).
+   * Retrieves current session.
    */
   public static getCurrentSession(): ENFAuthSession | null {
     try {
+      const token = ApiClient.getToken();
+      if (!token) return null;
+
       const item = localStorage.getItem(STORAGE_KEYS.SESSION);
       if (!item) return null;
       const session = JSON.parse(item) as ENFAuthSession;
@@ -176,11 +129,25 @@ export class EnfAuthService {
   }
 
   public static getCurrentUser(): SafeENFAuthUser | null {
+    const stored = ApiClient.getStoredUser();
+    if (stored) {
+      return {
+        id: stored.id,
+        fullName: stored.fullName,
+        email: stored.email,
+        phone: stored.phone,
+        role: stored.role as ENFRole,
+        organization: stored.organization,
+        professionalInfo: stored.professionalInfo,
+        emailVerified: stored.emailVerified,
+        twoFactorEnabled: false,
+        createdAt: stored.createdAt,
+      };
+    }
+
     const session = this.getCurrentSession();
     if (!session) return null;
-    const users = this.getUsers();
-    const user = users.find((u) => u.id === session.userId);
-    return user ? this.sanitizeUser(user) : null;
+    return DEFAULT_USERS_SEED.find((u) => u.id === session.userId) || null;
   }
 
   public static isAuthenticated(): boolean {
@@ -194,329 +161,221 @@ export class EnfAuthService {
   }
 
   /**
-   * Registers a new customer account.
+   * Synchronize current user with server /api/auth/me
+   */
+  public static async fetchCurrentUser(): Promise<SafeENFAuthUser | null> {
+    const res = await ApiClient.get('/auth/me');
+    if (res.success && res.data?.user) {
+      const u = res.data.user;
+      ApiClient.setSession(res.data.session?.token || ApiClient.getToken() || '', u);
+      return u;
+    }
+    return this.getCurrentUser();
+  }
+
+  /**
+   * Sign In via backend
+   */
+  public static async login(
+    email: string,
+    password: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    session?: ENFAuthSession;
+    user?: SafeENFAuthUser;
+    accountState?: string;
+    targetRoute?: string;
+  }> {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !password) {
+      return { success: false, message: 'Email and password are required.' };
+    }
+
+    // Call server API
+    const res = await ApiClient.post('/auth/login', {
+      email: cleanEmail,
+      password,
+    });
+
+    if (res.success && res.data?.session) {
+      const serverSession = res.data.session;
+      const serverUser = serverSession.user;
+
+      const authSession: ENFAuthSession = {
+        token: serverSession.token,
+        userId: serverUser.id,
+        email: serverUser.email,
+        role: serverUser.role,
+        fullName: serverUser.fullName,
+        createdAt: new Date().toISOString(),
+        expiresAt: serverSession.expiresAt,
+      };
+
+      try {
+        localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(authSession));
+      } catch (e) {
+        console.warn('Failed to store session:', e);
+      }
+
+      ApiClient.setSession(serverSession.token, serverUser);
+
+      return {
+        success: true,
+        message: res.data.message || 'Signed in successfully.',
+        session: authSession,
+        user: serverUser,
+        accountState: res.data.accountState,
+        targetRoute: res.data.targetRoute,
+      };
+    }
+
+    return {
+      success: false,
+      message: res.message || 'Invalid email or password.',
+    };
+  }
+
+  /**
+   * Real Sign Up via backend
    */
   public static async register(data: {
     fullName: string;
     email: string;
     password: string;
     confirmPassword?: string;
+    mobileNumber?: string;
     phone?: string;
     organization?: string;
+    professionalInfo?: string;
+    termsAccepted?: boolean;
     role?: ENFRole;
-    selectedPlanId?: string;
-  }): Promise<{ success: boolean; message: string; user?: SafeENFAuthUser; session?: ENFAuthSession }> {
-    const users = this.getUsers();
-    const cleanEmail = data.email.trim().toLowerCase();
-
-    // 1. Email format validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(cleanEmail)) {
-      return { success: false, message: 'Please enter a valid official email address.' };
-    }
-
-    // 2. Duplicate detection
-    if (users.some((u) => u.email.toLowerCase() === cleanEmail)) {
-      return { success: false, message: 'An account with this email address already exists. Please sign in.' };
-    }
-
-    // 3. Password minimum strength (min 8 characters)
-    if (!data.password || data.password.length < 8) {
-      return { success: false, message: 'Password must be at least 8 characters long.' };
-    }
-
-    // 4. Confirm password match if provided
-    if (data.confirmPassword && data.password !== data.confirmPassword) {
-      return { success: false, message: 'Password confirmation does not match.' };
-    }
-
-    const salt = `salt_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-    const passwordHash = await this.hashPassword(data.password, salt);
-    const userId = `usr-enf-${Date.now().toString().slice(-6)}`;
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-
-    const newUser: ENFAuthUser = {
-      id: userId,
-      fullName: data.fullName.trim(),
-      email: cleanEmail,
-      phone: data.phone?.trim() || '',
-      passwordHash,
-      salt,
-      role: data.role || 'ENF_OWNER',
-      emailVerified: false,
-      verificationCode,
-      twoFactorEnabled: false,
-      organization: data.organization?.trim() || '',
-      createdAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString(),
-    };
-
-    users.push(newUser);
-    this.saveUsers(users);
-
-    // Save selected plan association
-    const planToAssociate = data.selectedPlanId || EnfStorageService.getSelectedPlanId() || 'enf-50k';
-    EnfStorageService.setSelectedPlanId(planToAssociate);
-
-    // Initialize customer profile in storage
-    const initialProfile = EnfStorageService.getProfile(userId);
-    initialProfile.fullName = newUser.fullName;
-    initialProfile.email = newUser.email;
-    initialProfile.phone = newUser.phone || '';
-    initialProfile.organizationName = newUser.organization;
-    initialProfile.emailVerified = false;
-    initialProfile.onboardingStep = 1;
-    EnfStorageService.updateProfile(initialProfile);
-
-    // Create session
-    const session = this.createSession(newUser);
-
-    // Audit log
-    EnfStorageService.logAudit({
-      actorId: userId,
-      actorEmail: cleanEmail,
-      actorRole: newUser.role,
-      action: 'REGISTER_ENF_CUSTOMER',
-      targetType: 'USER',
-      targetId: userId,
-      details: { fullName: newUser.fullName, email: cleanEmail, selectedPlan: planToAssociate },
-      ipAddress: '127.0.0.1',
+  }): Promise<{
+    success: boolean;
+    message: string;
+    userId?: string;
+    email?: string;
+    verificationCode?: string;
+    deploymentNotice?: string;
+  }> {
+    const res = await ApiClient.post('/auth/register', {
+      fullName: data.fullName,
+      email: data.email,
+      password: data.password,
+      confirmPassword: data.confirmPassword,
+      mobileNumber: data.mobileNumber || data.phone,
+      organization: data.organization,
+      professionalInfo: data.professionalInfo,
+      termsAccepted: data.termsAccepted,
     });
 
-    // In-app verification dispatch notification
-    EnfStorageService.createNotification({
-      userId,
-      type: 'INFO',
-      title: 'Welcome to JuriMbrella ENF',
-      message: `Your 6-digit email verification code is: ${verificationCode}. Enter this code to secure your facility.`,
-      link: '/enf/verify-email',
-    });
+    if (res.success && res.data) {
+      return {
+        success: true,
+        message: res.data.message || 'Account created successfully. Please verify your email.',
+        userId: res.data.userId,
+        email: res.data.email,
+        verificationCode: res.data.verificationCode,
+        deploymentNotice: res.data.deploymentNotice,
+      };
+    }
 
     return {
-      success: true,
-      message: 'Account registered successfully. A 6-digit verification code has been dispatched.',
-      user: this.sanitizeUser(newUser),
-      session,
+      success: false,
+      message: res.message || 'Failed to create account.',
     };
   }
 
   /**
-   * Logs in an existing customer or administrator.
+   * Verify email via backend
    */
-  public static async login(
-    email: string,
-    password: string
-  ): Promise<{ success: boolean; message: string; session?: ENFAuthSession; user?: SafeENFAuthUser }> {
-    const users = this.getUsers();
-    const cleanEmail = email.trim().toLowerCase();
-    const user = users.find((u) => u.email.toLowerCase() === cleanEmail);
-
-    if (!user) {
-      return { success: false, message: 'Invalid email address or password.' };
+  public static async verifyEmail(
+    code: string,
+    email?: string
+  ): Promise<{ success: boolean; message: string; session?: ENFAuthSession; nextRoute?: string }> {
+    const targetEmail = email || this.getCurrentUser()?.email;
+    if (!targetEmail) {
+      return { success: false, message: 'Please provide the registered email address.' };
     }
 
-    const calculatedPbkdf2 = await this.hashPassword(password, user.salt);
-    const legacySha256 = await sha256(`jm_pwd_${user.salt}_${password}_2026`);
-
-    // Verify against PBKDF2 or upgrade legacy seeded account
-    if (calculatedPbkdf2 === user.passwordHash) {
-      // Valid PBKDF2
-    } else if (
-      legacySha256 === user.passwordHash ||
-      user.passwordHash === '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918'
-    ) {
-      // Auto-upgrade to PBKDF2
-      user.passwordHash = calculatedPbkdf2;
-      this.saveUsers(users);
-    } else {
-      return { success: false, message: 'Invalid email address or password.' };
-    }
-
-    user.lastLoginAt = new Date().toISOString();
-    this.saveUsers(users);
-
-    const session = this.createSession(user);
-
-    EnfStorageService.logAudit({
-      actorId: user.id,
-      actorEmail: user.email,
-      actorRole: user.role,
-      action: 'LOGIN',
-      targetType: 'SESSION',
-      targetId: session.token,
-      details: { role: user.role },
-      ipAddress: '127.0.0.1',
+    const res = await ApiClient.post('/auth/verify-email', {
+      email: targetEmail,
+      code: code.trim(),
     });
 
-    return { success: true, message: 'Signed in successfully.', session, user: this.sanitizeUser(user) };
+    if (res.success && res.data?.session) {
+      const serverSession = res.data.session;
+      const authSession: ENFAuthSession = {
+        token: serverSession.token,
+        userId: serverSession.user.id,
+        email: serverSession.user.email,
+        role: serverSession.user.role,
+        fullName: serverSession.user.fullName,
+        createdAt: new Date().toISOString(),
+        expiresAt: serverSession.expiresAt,
+      };
+
+      try {
+        localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(authSession));
+      } catch (e) {
+        console.warn('Failed to store session:', e);
+      }
+
+      ApiClient.setSession(serverSession.token, serverSession.user);
+
+      return {
+        success: true,
+        message: res.data.message || 'Email verified successfully.',
+        session: authSession,
+        nextRoute: res.data.nextRoute,
+      };
+    }
+
+    return {
+      success: false,
+      message: res.message || 'Invalid or expired verification code.',
+    };
   }
 
   /**
-   * Fast quick-switch for administrative and testing workflows.
+   * Sign out (invalidates token on server and removes client state)
    */
-  public static switchActiveUser(userId: string): ENFAuthSession | null {
-    const users = this.getUsers();
-    const user = users.find((u) => u.id === userId);
-    if (!user) return null;
-    return this.createSession(user);
+  public static async logout(): Promise<void> {
+    try {
+      await ApiClient.post('/auth/logout');
+    } catch {
+      // Ignore network errors on logout
+    } finally {
+      ApiClient.clearSession();
+      try {
+        localStorage.removeItem(STORAGE_KEYS.SESSION);
+      } catch {
+        // Ignore
+      }
+    }
   }
 
-  private static createSession(user: ENFAuthUser): ENFAuthSession {
-    const token = `jm_ses_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-    const expiresAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString(); // 24 hours
-    const session: ENFAuthSession = {
-      token,
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-      fullName: user.fullName,
-      createdAt: new Date().toISOString(),
-      expiresAt,
-    };
-
-    localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(session));
-    return session;
-  }
-
-  public static logout(): void {
-    const session = this.getCurrentSession();
-    if (session) {
-      EnfStorageService.logAudit({
-        actorId: session.userId,
-        actorEmail: session.email,
-        actorRole: session.role,
-        action: 'LOGOUT',
-        targetType: 'SESSION',
-        targetId: session.token,
-        details: {},
-        ipAddress: '127.0.0.1',
-      });
-    }
-    localStorage.removeItem(STORAGE_KEYS.SESSION);
-  }
-
-  public static verifyEmail(code: string): { success: boolean; message: string } {
-    const session = this.getCurrentSession();
-    if (!session) {
-      return { success: false, message: 'Please sign in first.' };
-    }
-
-    const users = this.getUsers();
-    const user = users.find((u) => u.id === session.userId);
-    if (!user) {
-      return { success: false, message: 'User record not found.' };
-    }
-
-    const cleanCode = code.trim();
-    if (cleanCode === user.verificationCode || cleanCode === '829104' || cleanCode === '123456') {
-      user.emailVerified = true;
-      this.saveUsers(users);
-
-      // Update customer profile
-      const profile = EnfStorageService.getProfile(user.id);
-      profile.emailVerified = true;
-      profile.onboardingStep = Math.max(profile.onboardingStep, 2);
-      EnfStorageService.updateProfile(profile);
-
-      EnfStorageService.logAudit({
-        actorId: user.id,
-        actorEmail: user.email,
-        actorRole: user.role,
-        action: 'VERIFY_EMAIL',
-        targetType: 'USER',
-        targetId: user.id,
-        details: {},
-        ipAddress: '127.0.0.1',
-      });
-
-      return { success: true, message: 'Email successfully verified. Your account is secured.' };
-    }
-
-    return { success: false, message: 'Invalid verification code. Please check your notification inbox or click Resend.' };
-  }
-
-  public static resendVerificationCode(userId?: string): { success: boolean; message: string; code?: string } {
-    const session = this.getCurrentSession();
-    const targetId = userId || session?.userId;
-    const users = this.getUsers();
-    const user = users.find((u) => u.id === targetId);
-
-    if (!user) {
-      return { success: false, message: 'No account found. Please sign in or register.' };
-    }
-
-    const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-    user.verificationCode = newCode;
-    this.saveUsers(users);
-
-    EnfStorageService.createNotification({
-      userId: user.id,
-      type: 'INFO',
-      title: 'New Verification Code Dispatched',
-      message: `Your new 6-digit email verification code is: ${newCode}.`,
-      link: '/enf/verify-email',
-    });
-
+  /**
+   * Password Reset
+   */
+  public static async requestPasswordReset(email: string): Promise<{ success: boolean; message: string; token?: string }> {
+    const res = await ApiClient.post('/auth/forgot-password', { email });
     return {
-      success: true,
-      message: `A new verification code has been dispatched. (Code: ${newCode})`,
-      code: newCode,
+      success: res.success,
+      message: res.message || 'If this email is registered, password reset instructions have been issued.',
+      token: res.data?.resetToken,
     };
   }
 
-  public static requestPasswordReset(email: string): { success: boolean; message: string; token?: string } {
-    const users = this.getUsers();
-    const user = users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase());
-    if (!user) {
-      // Security: Do not disclose whether email exists
-      return { success: true, message: 'If this email is registered, password reset instructions have been sent.' };
-    }
-
-    const resetToken = `rst_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    user.resetToken = resetToken;
-    this.saveUsers(users);
-
-    EnfStorageService.createNotification({
-      userId: user.id,
-      type: 'INFO',
-      title: 'Password Reset Requested',
-      message: `Your reset token is: ${resetToken}. Enter this code along with your new password.`,
-      link: '/enf/forgot-password',
+  public static async resetPassword(token: string, newPassword: string, confirmPassword?: string): Promise<{ success: boolean; message: string }> {
+    const res = await ApiClient.post('/auth/reset-password', {
+      resetToken: token,
+      newPassword,
+      confirmPassword,
     });
-
     return {
-      success: true,
-      message: `Password reset token generated: ${resetToken}. (Check notifications or enter this token below).`,
-      token: resetToken,
+      success: res.success,
+      message: res.message || 'Failed to reset password.',
     };
-  }
-
-  public static async resetPassword(token: string, newPassword: string): Promise<{ success: boolean; message: string }> {
-    if (newPassword.length < 8) {
-      return { success: false, message: 'New password must be at least 8 characters long.' };
-    }
-
-    const users = this.getUsers();
-    const user = users.find((u) => u.resetToken === token.trim());
-    if (!user) {
-      return { success: false, message: 'Invalid or expired password reset token.' };
-    }
-
-    user.passwordHash = await this.hashPassword(newPassword, user.salt);
-    user.resetToken = undefined;
-    this.saveUsers(users);
-
-    EnfStorageService.logAudit({
-      actorId: user.id,
-      actorEmail: user.email,
-      actorRole: user.role,
-      action: 'PASSWORD_RESET',
-      targetType: 'USER',
-      targetId: user.id,
-      details: {},
-      ipAddress: '127.0.0.1',
-    });
-
-    return { success: true, message: 'Password has been successfully updated. You may now sign in.' };
   }
 }

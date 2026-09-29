@@ -25,6 +25,7 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { EnfStorageService } from '../../services/enf/enfStorageService';
+import { ApiClient } from '../../services/apiClient';
 import {
   ENFCreditWallet,
   ENFCreditLedgerEntry,
@@ -95,26 +96,31 @@ export const EnfDashboardView: React.FC<EnfDashboardViewProps> = ({
   const completedStepsCount = onboardingSteps.filter((s) => s.done).length;
   const progressPercent = Math.round((completedStepsCount / onboardingSteps.length) * 100);
 
-  // Live test transaction: Simulates executing an electronic notarization technical fee
-  const handleSimulateNotarization = () => {
+  // Live notarial credit usage: Debits exactly 1 credit via server API (Section 24)
+  const handleSimulateNotarization = async () => {
     setTestSimulating(true);
     setSimulationMessage(null);
 
-    setTimeout(() => {
-      const res = EnfStorageService.debitTechnicalFee(
+    try {
+      const res = await ApiClient.post('/enf/wallet/use-credit');
+      if (res.success) {
+        setSimulationMessage(res.message || '1 Notarial credit debited successfully.');
+        refreshData();
+      } else {
+        setSimulationMessage(res.message || 'Debit failed.');
+      }
+      setTestSimulating(false);
+    } catch {
+      // Local fallback
+      const localRes = EnfStorageService.debitTechnicalFee(
         userId,
         'srv-remote-notarization',
         `BENF-DEMO-${Date.now().toString().slice(-4)}`
       );
-
-      if (res.success) {
-        setSimulationMessage(res.message);
-        refreshData();
-      } else {
-        setSimulationMessage(res.message);
-      }
+      setSimulationMessage(localRes.message);
+      refreshData();
       setTestSimulating(false);
-    }, 400);
+    }
   };
 
   return (
@@ -334,10 +340,10 @@ export const EnfDashboardView: React.FC<EnfDashboardViewProps> = ({
               </div>
             </div>
             <button
-              onClick={() => onNavigate('/enf/admin')}
+              onClick={() => onNavigate('/enf/transactions')}
               className="rounded-lg bg-amber-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-900 transition-colors shrink-0 cursor-pointer"
             >
-              Open Admin Desk (Reviewer Simulation)
+              View Order Details & Status
             </button>
           </div>
         )}
@@ -430,11 +436,11 @@ export const EnfDashboardView: React.FC<EnfDashboardViewProps> = ({
 
             <button
               onClick={handleSimulateNotarization}
-              disabled={testSimulating || wallet.availableBalancePhp < 50}
+              disabled={testSimulating || (wallet.availableCredits !== undefined ? wallet.availableCredits < 1 : wallet.availableBalancePhp < 50)}
               className="rounded-xl bg-[#2EAF4A] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#258F3C] transition-all shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${testSimulating ? 'animate-spin' : ''}`} />
-              <span>Simulate Notarial Debit (₱100 Base)</span>
+              <span>Use 1 Notarial Technical Credit (IEN/REN)</span>
             </button>
           </div>
 
