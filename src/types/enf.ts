@@ -9,9 +9,13 @@ export interface ENFPlan {
   id: string;
   name: string;
   tier: ENFPlanTier;
+  tierLabel: '₱20K' | '₱50K' | '₱100K' | string;
   pricePhp: number;
   creditAmountPhp: number;
   discountRate: number; // e.g. 0.19 for 19%, 0.45 for 45%, 0.79 for 79%
+  baseFeePhp: number; // ₱100
+  effectiveFeePhp: number; // ₱81, ₱55, ₱21
+  creditsQuantity: number; // 247, 1819, 4761
   headline: string;
   description: string;
   features: string[];
@@ -45,6 +49,10 @@ export interface ENFOrder {
   amountPhp: number;
   creditAmountPhp: number;
   discountRate: number;
+  tierLabel?: '₱20K' | '₱50K' | '₱100K' | string;
+  baseFeePhp?: number;
+  effectiveFeePhp?: number;
+  creditsQuantity?: number;
   paymentRef: string;
   termsVersion: string;
   status: ENFOrderStatus;
@@ -109,6 +117,9 @@ export interface ENFCreditLedgerEntry {
   serviceName: string;
   discountAppliedRate: number;
   referenceCode: string;
+  creditsDebited?: number;
+  creditsBalanceBefore?: number;
+  creditsBalanceAfter?: number;
   timestamp: string;
   status: 'COMPLETED' | 'PENDING' | 'REVERSED';
   notes?: string;
@@ -126,6 +137,13 @@ export interface ENFCreditWallet {
   currentDiscountRate: number;
   status: 'ACTIVE' | 'SUSPENDED' | 'FROZEN';
   lastUpdated: string;
+  // Exact Credit Quantities
+  availableCredits: number;
+  creditsUsed: number;
+  originalCredits: number;
+  developmentTier: '₱20K' | '₱50K' | '₱100K' | string;
+  effectiveTechnicalFeePhp: number;
+  baseFeePhp: number;
 }
 
 export interface ENFCustomerProfile {

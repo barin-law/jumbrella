@@ -27,13 +27,13 @@ import {
 } from '../../types/enf';
 
 const STORAGE_KEYS = {
-  PLANS: 'jurimbrella_enf_plans_v1',
+  PLANS: 'jurimbrella_enf_plans_v2',
   BANK_CONFIG: 'jurimbrella_enf_bank_config_v1',
   FEE_ENGINE: 'jurimbrella_enf_fee_engine_v1',
-  ORDERS: 'jurimbrella_enf_orders_v1',
-  PAYMENTS: 'jurimbrella_enf_payments_v1',
-  WALLETS: 'jurimbrella_enf_wallets_v1',
-  LEDGER: 'jurimbrella_enf_ledger_v1',
+  ORDERS: 'jurimbrella_enf_orders_v2',
+  PAYMENTS: 'jurimbrella_enf_payments_v2',
+  WALLETS: 'jurimbrella_enf_wallets_v2',
+  LEDGER: 'jurimbrella_enf_ledger_v2',
   PROFILES: 'jurimbrella_enf_profiles_v1',
   FACILITY_CONFIGS: 'jurimbrella_enf_facilities_v1',
   CLIENTS: 'jurimbrella_enf_clients_v1',
@@ -44,25 +44,29 @@ const STORAGE_KEYS = {
   NOTIFICATIONS: 'jurimbrella_enf_notifications_v1',
 };
 
-// Initial Configurable Plans (as required by section 4)
+// Initial Configurable Plans (as required by section 4 & exact development tier details)
 const DEFAULT_PLANS: ENFPlan[] = [
   {
     id: 'enf-plan-20k',
-    name: 'Starter Facility Tier',
+    name: 'ENF ₱20K',
     tier: 'STARTER',
+    tierLabel: '₱20K',
     pricePhp: 20000,
     creditAmountPhp: 20000,
     discountRate: 0.19, // 19% applicable technical-fee discount
-    headline: '19% Technical Fee Discount + ₱20,000 Prepaid Credits',
-    description: 'Ideal for solo practitioners and newly appointed Electronic Notaries Public starting digital intake.',
+    baseFeePhp: 100,
+    effectiveFeePhp: 81,
+    creditsQuantity: 247, // Exactly 247 credits
+    headline: '19% Discount • ₱81 Effective Fee • 247 Credits',
+    description: 'Entry-tier development access for solo practitioners and independent electronic notaries public.',
     features: [
-      '₱20,000 100% usable prepaid technical credits',
-      '19% discount on every electronic notarization technical fee',
-      'No setup or onboarding platform fee',
+      '247 Credits included (₱20,000 prepaid value)',
+      '19% applicable technical-fee discount',
+      '₱81 effective technical fee (Base fee ₱100)',
+      '1 credit per online notarial technical service',
+      '₱0 setup fee for onboarding',
       'Custom ENF subdomain & branded client intake portal',
-      'AI-assisted Supreme Court A.M. 24-10-14-SC legal research',
-      'Automated Electronic Notarial Register (Rule 7)',
-      'Digital certificate integration & AES-256 seal tamper detection',
+      'AI-assisted Supreme Court legal research',
     ],
     isPopular: false,
     isActive: true,
@@ -70,22 +74,26 @@ const DEFAULT_PLANS: ENFPlan[] = [
   },
   {
     id: 'enf-plan-50k',
-    name: 'Professional Practice Tier',
+    name: 'ENF ₱50K',
     tier: 'GROWTH',
+    tierLabel: '₱50K',
     pricePhp: 50000,
     creditAmountPhp: 50000,
     discountRate: 0.45, // 45% applicable technical-fee discount
-    headline: '45% Technical Fee Discount + ₱50,000 Prepaid Credits',
-    description: 'Designed for active notarial offices, law partnerships, and multi-signer corporate intake.',
+    baseFeePhp: 100,
+    effectiveFeePhp: 55,
+    creditsQuantity: 1819, // Exactly 1,819 credits
+    headline: '45% Discount • ₱55 Effective Fee • 1,819 Credits',
+    description: 'Designed for active notarial offices, law partnerships, and corporate legal operations.',
     features: [
-      '₱50,000 100% usable prepaid technical credits',
-      '45% discount on every electronic notarization technical fee (Pay ₱55 instead of ₱100)',
-      'No onboarding fee or setup charge',
+      '1,819 Credits included (₱50,000 prepaid value)',
+      '45% applicable technical-fee discount',
+      '₱55 effective technical fee (Base fee ₱100)',
+      '1 credit per online notarial technical service',
+      '₱0 setup fee for onboarding',
       'Custom logo, brand colors & bespoke document seals',
-      'Advanced multi-party videoconference queue & waiting room',
       'Full staff delegation (ENP Assistant workflow)',
-      'Unlimited AI Philippine legal research queries & source export',
-      'Priority payment verification desk',
+      'Unlimited AI Philippine legal research queries',
     ],
     isPopular: true,
     isActive: true,
@@ -93,22 +101,26 @@ const DEFAULT_PLANS: ENFPlan[] = [
   },
   {
     id: 'enf-plan-100k',
-    name: 'Enterprise Institutional Tier',
+    name: 'ENF ₱100K',
     tier: 'ENTERPRISE',
+    tierLabel: '₱100K',
     pricePhp: 100000,
     creditAmountPhp: 100000,
     discountRate: 0.79, // 79% applicable technical-fee discount
-    headline: '79% Technical Fee Discount + ₱100,000 Prepaid Credits',
-    description: 'Maximum cost reduction for large law firms, banking institutions, and nationwide corporate legal departments.',
+    baseFeePhp: 100,
+    effectiveFeePhp: 21,
+    creditsQuantity: 4761, // Exactly 4,761 credits
+    headline: '79% Discount • ₱21 Effective Fee • 4,761 Credits',
+    description: 'Maximum cost reduction for large law firms, banking institutions, and institutional legal departments.',
     features: [
-      '₱100,000 100% usable prepaid technical credits',
-      '79% discount on every electronic notarization technical fee (Pay ₱21 instead of ₱100)',
+      '4,761 Credits included (₱100,000 prepaid value)',
+      '79% applicable technical-fee discount',
+      '₱21 effective technical fee (Base fee ₱100)',
+      '1 credit per online notarial technical service',
+      '₱0 setup fee for onboarding',
       'Dedicated integration architect & technical onboarding engineer',
-      'Full white-label domain mapping & API webhook adapters',
       'Role-based staff permissions, DPO audit trail & Court Auditor access',
       'Automated nightly hash escrow & forensic backup to cloud storage',
-      'Custom legal drafting templates & corporate batch notarization',
-      'Direct line to JuriMbrella Technical Director',
     ],
     isPopular: false,
     isActive: true,
@@ -295,10 +307,14 @@ export class EnfStorageService {
         customerEmail: 'atty.santos@santoslaw.ph',
         customerPhone: '+63 917 555 4921',
         planId: 'enf-plan-50k',
-        planName: 'Professional Practice Tier',
+        planName: 'ENF ₱50K',
+        tierLabel: '₱50K',
         amountPhp: 50000,
         creditAmountPhp: 50000,
         discountRate: 0.45,
+        baseFeePhp: 100,
+        effectiveFeePhp: 55,
+        creditsQuantity: 1819,
         paymentRef: 'ENF-2026-00418',
         termsVersion: 'v2026.1-SC-AM241014',
         status: 'PAYMENT_SUBMITTED',
@@ -330,9 +346,13 @@ export class EnfStorageService {
       customerPhone: customer.phone,
       planId: selectedPlan.id,
       planName: selectedPlan.name,
+      tierLabel: selectedPlan.tierLabel,
       amountPhp: selectedPlan.pricePhp,
       creditAmountPhp: selectedPlan.creditAmountPhp,
       discountRate: selectedPlan.discountRate,
+      baseFeePhp: selectedPlan.baseFeePhp,
+      effectiveFeePhp: selectedPlan.effectiveFeePhp,
+      creditsQuantity: selectedPlan.creditsQuantity,
       paymentRef,
       termsVersion: selectedPlan.termsVersion,
       status: 'PENDING_PAYMENT',
@@ -509,9 +529,18 @@ export class EnfStorageService {
       const creditToAdd = order.creditAmountPhp;
       const balanceAfter = balanceBefore + creditToAdd;
 
+      const creditsQuantityToAdd = order.creditsQuantity || (order.amountPhp === 20000 ? 247 : order.amountPhp === 100000 ? 4761 : 1819);
+      const tierLabel = order.tierLabel || (order.amountPhp === 20000 ? '₱20K' : order.amountPhp === 100000 ? '₱100K' : '₱50K');
+      const effectiveFee = order.effectiveFeePhp || (order.amountPhp === 20000 ? 81 : order.amountPhp === 100000 ? 21 : 55);
+
       wallet.availableBalancePhp = balanceAfter;
       wallet.totalPurchasedPhp += creditToAdd;
       wallet.currentDiscountRate = order.discountRate; // Assign discount tier
+      wallet.availableCredits = (wallet.availableCredits || 0) + creditsQuantityToAdd;
+      wallet.originalCredits = (wallet.originalCredits || 0) + creditsQuantityToAdd;
+      wallet.developmentTier = tierLabel;
+      wallet.effectiveTechnicalFeePhp = effectiveFee;
+      wallet.baseFeePhp = 100;
       wallet.status = 'ACTIVE';
       wallet.lastUpdated = now;
       this.saveWallet(wallet);
@@ -666,7 +695,7 @@ export class EnfStorageService {
   public static getWallets(): ENFCreditWallet[] {
     const wallets = this.read<ENFCreditWallet[]>(STORAGE_KEYS.WALLETS, []);
     if (wallets.length === 0) {
-      // Seed initial demo wallet
+      // Seed initial demo wallet with exact values for ₱50K tier (1,819 credits)
       const demoWallet: ENFCreditWallet = {
         id: 'WLT-2026-001',
         userId: 'demo-enf-owner-1',
@@ -678,6 +707,12 @@ export class EnfStorageService {
         currentDiscountRate: 0.45,
         status: 'ACTIVE',
         lastUpdated: new Date().toISOString(),
+        availableCredits: 1819,
+        creditsUsed: 0,
+        originalCredits: 1819,
+        developmentTier: '₱50K',
+        effectiveTechnicalFeePhp: 55,
+        baseFeePhp: 100,
       };
       this.write(STORAGE_KEYS.WALLETS, [demoWallet]);
       return [demoWallet];
@@ -697,9 +732,15 @@ export class EnfStorageService {
         availableBalancePhp: 0,
         totalPurchasedPhp: 0,
         totalUsedPhp: 0,
-        currentDiscountRate: 0,
+        currentDiscountRate: 0.45,
         status: 'ACTIVE',
         lastUpdated: new Date().toISOString(),
+        availableCredits: 0,
+        creditsUsed: 0,
+        originalCredits: 0,
+        developmentTier: '₱50K',
+        effectiveTechnicalFeePhp: 55,
+        baseFeePhp: 100,
       };
       wallets.push(wallet);
       this.write(STORAGE_KEYS.WALLETS, wallets);
@@ -761,26 +802,34 @@ export class EnfStorageService {
     message: string;
     chargedPhp?: number;
     balanceAfterPhp?: number;
+    availableCredits?: number;
+    creditsDebited?: number;
     ledgerEntry?: ENFCreditLedgerEntry;
   } {
     const feeEngine = this.getFeeEngine();
     const service = feeEngine.availableServices.find((s) => s.serviceId === serviceId) || feeEngine.availableServices[0];
     const wallet = this.getOrCreateWallet(userId);
 
-    const baseFee = service.baseFeePhp;
-    const discountRate = wallet.currentDiscountRate;
+    const baseFee = service.baseFeePhp || 100;
+    const discountRate = wallet.currentDiscountRate || 0.45;
     const calc = this.calculateTechnicalFee(baseFee, discountRate);
 
-    if (wallet.availableBalancePhp < calc.chargedFee) {
+    // Customer-facing rule: "1 credit can be used for the technical fee for one online notarial service through the ENF facility."
+    const creditsBefore = wallet.availableCredits !== undefined ? wallet.availableCredits : 1819;
+
+    if (creditsBefore <= 0 && wallet.availableBalancePhp < calc.chargedFee) {
       return {
         success: false,
-        message: `Insufficient prepaid credit balance (₱${wallet.availableBalancePhp.toLocaleString()}). Required: ₱${calc.chargedFee.toLocaleString()}. Please replenish credits.`,
+        message: `Insufficient prepaid credits (0 Credits remaining). Required: 1 credit per online notarial technical service. Please replenish your ENF development tier.`,
       };
     }
 
+    const creditsAfter = Math.max(0, creditsBefore - 1);
     const balanceBefore = wallet.availableBalancePhp;
-    const balanceAfter = balanceBefore - calc.chargedFee;
+    const balanceAfter = Math.max(0, balanceBefore - calc.chargedFee);
 
+    wallet.availableCredits = creditsAfter;
+    wallet.creditsUsed = (wallet.creditsUsed || 0) + 1;
     wallet.availableBalancePhp = balanceAfter;
     wallet.totalUsedPhp += calc.chargedFee;
     wallet.lastUpdated = new Date().toISOString();
@@ -794,12 +843,15 @@ export class EnfStorageService {
       amountPhp: calc.chargedFee,
       balanceBeforePhp: balanceBefore,
       balanceAfterPhp: balanceAfter,
+      creditsDebited: 1,
+      creditsBalanceBefore: creditsBefore,
+      creditsBalanceAfter: creditsAfter,
       serviceName: `${service.serviceName} (${instrumentReference})`,
       discountAppliedRate: discountRate,
       referenceCode: instrumentReference,
       timestamp: new Date().toISOString(),
       status: 'COMPLETED',
-      notes: `Technical fee ₱${baseFee} with ${(discountRate * 100).toFixed(0)}% ENF discount (₱${calc.discountAmount} saved).`,
+      notes: `1 credit debited for online notarial technical service. Effective fee ₱${calc.chargedFee} (Base fee ₱${baseFee} with ${(discountRate * 100).toFixed(0)}% discount).`,
     };
     this.appendLedger(ledgerEntry);
 
@@ -815,6 +867,9 @@ export class EnfStorageService {
         baseFee,
         discountRate,
         charged: calc.chargedFee,
+        creditsDebited: 1,
+        creditsBefore,
+        creditsAfter,
         balanceAfter,
         instrumentReference,
       },
@@ -823,9 +878,11 @@ export class EnfStorageService {
 
     return {
       success: true,
-      message: `Technical fee of ₱${calc.chargedFee} successfully debited. Saved ₱${calc.discountAmount}. Remaining: ₱${balanceAfter.toLocaleString()}.`,
+      message: `1 credit deducted for online notarial service (${instrumentReference}). Available credits: ${creditsAfter.toLocaleString()} (was ${creditsBefore.toLocaleString()}). Effective technical fee: ₱${calc.chargedFee}.`,
       chargedPhp: calc.chargedFee,
       balanceAfterPhp: balanceAfter,
+      availableCredits: creditsAfter,
+      creditsDebited: 1,
       ledgerEntry,
     };
   }
